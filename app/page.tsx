@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import SplashScreen from "../components/SplashScreen";
 import Navbar from "../components/Navbar";
 import CitySearch from "../components/CitySearch";
 import Timeline from "../components/Timeline";
+import Toast from "../components/Toast";
 import useClock from "../hooks/useClock";
 import useTimezones from "../hooks/useTimezones";
 import { getOverlapHours, formatTime } from "../lib/timeUtils";
@@ -12,7 +13,17 @@ import { cities as allCities } from "../lib/cities";
 
 export default function Home() {
   const [appReady, setAppReady] = useState(false);
+  const [toastOpen, setToastOpen] = useState(false);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAppReady(true);
+    }, 3100);
+    return () => clearTimeout(timer);
+  }, []);
+
   const { now } = useClock();
+  
   const {
     selectedCities,
     addCity,
@@ -35,12 +46,55 @@ export default function Home() {
     }
   };
 
+  const handleShare = useCallback(() => {
+    if (typeof window !== "undefined") {
+      const ids = selectedCities.map(c => c.id).join(",");
+      const url = `${window.location.origin}?cities=${ids}`;
+      navigator.clipboard.writeText(url).then(() => {
+        setToastOpen(true);
+      });
+    }
+  }, [selectedCities]);
+
+  // Global Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      
+      switch(e.key.toLowerCase()) {
+        case 'a':
+          e.preventDefault();
+          // To open CitySearch via shortcut, we simulate click or use a global state
+          // For simplicity we use querySelector to find the button
+          const addBtn = document.querySelector('button[title="Max 6 cities"]') as HTMLButtonElement || 
+                         Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Add City'));
+          if (addBtn && !addBtn.disabled) {
+            addBtn.click();
+          }
+          break;
+        case 's':
+          e.preventDefault();
+          handleShare();
+          break;
+        case 't':
+          e.preventDefault();
+          toggleTimeFormat();
+          break;
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleShare, toggleTimeFormat]);
+
   const nextOverlap = useMemo(() => {
     if (selectedCities.length === 0) return null;
     const overlaps = getOverlapHours(selectedCities.map((c) => c.timezone));
     if (overlaps.length === 0) return null;
 
-    // Calculate shift to local device time
     const d = new Date();
     const cityTime = new Date(
       d.toLocaleString("en-US", { timeZone: selectedCities[0].timezone })
@@ -89,19 +143,22 @@ export default function Home() {
 
   return (
     <>
-      {!appReady && <SplashScreen onComplete={() => setAppReady(true)} />}
+      {!appReady && <SplashScreen />}
 
       <div
-        className={`min-h-screen bg-[#ffffff] transition-opacity duration-400 ${
-          appReady ? "opacity-100" : "opacity-0"
-        }`}
+        className="min-h-screen bg-[#ffffff]"
+        style={{ opacity: appReady ? 1 : 0, transition: 'opacity 400ms ease' }}
       >
-        <Navbar timeFormat={timeFormat} toggleTimeFormat={toggleTimeFormat} />
+        <Navbar 
+          timeFormat={timeFormat} 
+          toggleTimeFormat={toggleTimeFormat} 
+          onShare={handleShare}
+        />
 
         <main className="w-full max-w-[1100px] mx-auto px-[24px] pt-[40px] pb-[80px]">
           {/* Hero Section */}
           <section className="flex flex-col">
-            <h1 className="text-[48px] font-display font-semibold text-[#242424] leading-[1.1] tracking-[-0.5px]">
+            <h1 className="text-[32px] md:text-[48px] font-display font-semibold text-[#242424] leading-[1.1] tracking-[-0.5px]">
               Plan Across<br />Time Zones.
             </h1>
             <p className="mt-[12px] text-[16px] font-sans text-[#898989] max-w-[480px]">
@@ -116,7 +173,7 @@ export default function Home() {
                 now={now}
                 timeFormat={timeFormat}
               />
-              <div className="flex items-center gap-[8px]">
+              <div className="hidden md:flex items-center gap-[8px]">
                 <span className="text-[14px] font-sans text-[#898989] ml-[4px]">
                   or try:
                 </span>
@@ -139,7 +196,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-[16px] flex items-center gap-[8px] text-[12px] font-sans text-[#898989]">
+            <div className="mt-[16px] flex items-center flex-wrap gap-[8px] text-[12px] font-sans text-[#898989]">
               <span>{selectedCities.length} cities active</span>
               <span>·</span>
               <span>
@@ -192,7 +249,7 @@ export default function Home() {
               </div>
 
               {/* Legend Row */}
-              <div className="mt-[16px] flex items-center gap-[24px]">
+              <div className="mt-[16px] flex flex-wrap items-center gap-[16px] md:gap-[24px]">
                 <div className="flex items-center gap-[4px]">
                   <div className="w-[10px] h-[10px] bg-[#f0f0f0] border border-[rgba(34,42,53,0.08)] rounded-[2px]" />
                   <span className="text-[10px] font-sans text-[#898989]">
@@ -241,6 +298,8 @@ export default function Home() {
           )}
         </main>
       </div>
+      
+      <Toast show={toastOpen} onClose={() => setToastOpen(false)} />
     </>
   );
 }

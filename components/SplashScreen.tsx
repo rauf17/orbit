@@ -1,21 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
 
-export default function SplashScreen({ onComplete }: { onComplete: () => void }) {
+export default function SplashScreen() {
   const [exit, setExit] = useState(false);
 
   useEffect(() => {
     const exitTimer = setTimeout(() => {
       setExit(true);
     }, 2800);
-    const removeTimer = setTimeout(() => {
-      onComplete();
-    }, 3100);
     return () => {
       clearTimeout(exitTimer);
-      clearTimeout(removeTimer);
     };
-  }, [onComplete]);
+  }, []);
 
   return (
     <div

@@ -88,7 +88,7 @@ export function getOverlapHours(timezones: string[]): number[] {
   const overlaps: number[] = [];
   
   const d = new Date();
-  d.setMinutes(0, 0, 0, 0);
+  d.setMinutes(0, 0, 0);
   const startUtc = d.getTime();
 
   for (let i = 0; i < 24; i++) {
