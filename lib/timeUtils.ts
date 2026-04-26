@@ -1,6 +1,5 @@
-export function getCurrentTimeInZone(timezone: string): Date {
-  const now = new Date();
-  const str = now.toLocaleString("en-US", { timeZone: timezone });
+export function getCurrentTimeInZone(timezone: string, date: Date = new Date()): Date {
+  const str = date.toLocaleString("en-US", { timeZone: timezone });
   return new Date(str);
 }
 
@@ -26,21 +25,23 @@ export function formatDate(date: Date, timezone: string): string {
   }).format(date);
 }
 
-export function getHourInZone(timezone: string): number {
+export function getHourInZone(timezone: string, date: Date = new Date()): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     hour: "numeric",
     hourCycle: "h23",
-  }).formatToParts(new Date());
+  }).formatToParts(date);
   
   const hourPart = parts.find((p) => p.type === "hour");
   return hourPart ? parseInt(hourPart.value, 10) : 0;
 }
 
-export function getOffsetString(timezone: string): string {
-  const now = new Date();
-  const utcDate = new Date(now.toLocaleString("en-US", { timeZone: "UTC" }));
-  const tzDate = new Date(now.toLocaleString("en-US", { timeZone: timezone }));
+export function getOffsetString(timezone: string, date: Date = new Date()): string {
+  const utcStr = date.toLocaleString("en-US", { timeZone: "UTC" });
+  const tzStr = date.toLocaleString("en-US", { timeZone: timezone });
+  
+  const utcDate = new Date(utcStr);
+  const tzDate = new Date(tzStr);
   
   const diffMs = tzDate.getTime() - utcDate.getTime();
   const diffHours = diffMs / (1000 * 60 * 60);
@@ -56,23 +57,34 @@ export function getOffsetString(timezone: string): string {
   return `UTC${sign}${hours}:${minutes.toString().padStart(2, "0")}`;
 }
 
+export function getOffsetForDate(timezone: string, date: Date): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en', {
+      timeZoneName: 'shortOffset',
+      timeZone: timezone,
+    }).formatToParts(date);
+    return parts.find(p => p.type === 'timeZoneName')?.value ?? 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 export function isWorkingHour(hour: number): boolean {
   return hour >= 9 && hour < 17;
 }
 
-export function isDSTActive(timezone: string): boolean {
-  const now = new Date();
-  const year = now.getFullYear();
+export function isDSTActive(timezone: string, date: Date = new Date()): boolean {
+  const year = date.getFullYear();
   const jan = new Date(year, 0, 1);
   const jul = new Date(year, 6, 1);
 
-  function getOffset(date: Date) {
-    const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
-    const tzDate = new Date(date.toLocaleString("en-US", { timeZone: timezone }));
+  function getOffset(d: Date) {
+    const utcDate = new Date(d.toLocaleString("en-US", { timeZone: "UTC" }));
+    const tzDate = new Date(d.toLocaleString("en-US", { timeZone: timezone }));
     return tzDate.getTime() - utcDate.getTime();
   }
 
-  const offsetNow = getOffset(now);
+  const offsetNow = getOffset(date);
   const offsetJan = getOffset(jan);
   const offsetJul = getOffset(jul);
 
@@ -82,12 +94,12 @@ export function isDSTActive(timezone: string): boolean {
   return offsetNow > standardOffset;
 }
 
-export function getOverlapHours(timezones: string[]): number[] {
+export function getOverlapHours(timezones: string[], date: Date = new Date()): number[] {
   if (!timezones || timezones.length === 0) return [];
 
   const overlaps: number[] = [];
   
-  const d = new Date();
+  const d = new Date(date);
   d.setMinutes(0, 0, 0);
   const startUtc = d.getTime();
 
@@ -129,9 +141,8 @@ export function hourToPercent(hour: number, minutes: number): number {
   return Math.min(100, Math.max(0, percent));
 }
 
-export function getTimeAtPercent(percent: number, timezone: string): string {
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+export function getTimeAtPercent(percent: number, timezone: string, date: Date = new Date()): string {
+  const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
 
   const totalMinutes = Math.round((percent / 100) * 24 * 60);
   const targetDate = new Date(startOfDay.getTime() + totalMinutes * 60 * 1000);

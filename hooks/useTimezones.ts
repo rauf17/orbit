@@ -109,6 +109,13 @@ export default function useTimezones() {
     setTimeFormat((prev) => (prev === '12h' ? '24h' : '12h'));
   }, []);
 
+  const setCitiesByIds = useCallback((ids: string[]) => {
+    const resolved = ids
+      .map((id) => allCities.find((c) => c.id === id))
+      .filter((c): c is City => c !== undefined);
+    setSelectedCities(resolved);
+  }, []);
+
   return {
     selectedCities,
     addCity,
@@ -120,5 +127,6 @@ export default function useTimezones() {
     isInitialized,
     noteText,
     updateNote,
+    setCitiesByIds,
   };
 }

@@ -1,12 +1,14 @@
 'use client';
+
 export function OrbitIcon({ 
   size = 18, 
   speed = 3,
+  className = "",
 }: { 
   size?: number;
   speed?: number;
+  className?: string;
 }) {
-  const id = `orbit-${size}-${speed}`;
   return (
     <>
       <style>{`
@@ -14,9 +16,9 @@ export function OrbitIcon({
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
-        .orbit-dot-${id} {
-          animation: orbitSpin ${speed}s linear infinite;
-          transform-origin: 12px 12px;
+        .orbit-spinning {
+          animation: orbitSpin var(--orbit-speed, 3s) linear infinite;
+          transform-origin: center center;
         }
       `}</style>
       <svg 
@@ -24,13 +26,15 @@ export function OrbitIcon({
         height={size} 
         viewBox="0 0 24 24" 
         fill="none"
+        className={className}
+        style={{ '--orbit-speed': `${speed}s` } as React.CSSProperties}
       >
         <circle 
           cx="12" cy="12" r="9" 
           stroke="currentColor" 
           strokeWidth="1.5"
         />
-        <g className={`orbit-dot-${id}`}>
+        <g className="orbit-spinning">
           <circle cx="12" cy="3" r="2.5" fill="currentColor"/>
         </g>
       </svg>

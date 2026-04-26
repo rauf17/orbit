@@ -1,90 +1,88 @@
 "use client";
 
-import React, { useState, useRef, useMemo, memo, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo, memo } from "react";
 import { City } from "../lib/cities";
-import AnalogClock from "./AnalogClock";
-import {
-  hourToPercent,
-  getOverlapHours,
-  formatTime,
-  getOffsetString,
-  isDSTActive,
+import { 
+  formatTime, 
+  getOffsetString, 
+  isDSTActive, 
+  getOverlapHours, 
+  hourToPercent, 
+  getTimeAtPercent,
+  getOffsetForDate 
 } from "../lib/timeUtils";
+import { OrbitIcon } from "./OrbitIcon";
+import AnalogClock from "./AnalogClock";
 
 interface TimelineProps {
   cities: City[];
   now: Date;
+  selectedDate: Date;
   timeFormat: "12h" | "24h";
-  onRemoveCity: (cityId: string) => void;
+  onRemoveCity: (id: string) => void;
   onReorderCities: (from: number, to: number) => void;
   meetingPercent: number | null;
   setMeetingPercent: (p: number | null) => void;
 }
 
 const DragHandleIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-    <path d="M4.5 3C4.5 3.55228 4.05228 4 3.5 4C2.94772 4 2.5 3.55228 2.5 3C2.5 2.44772 2.94772 2 3.5 2C4.05228 2 4.5 2.44772 4.5 3Z" />
-    <path d="M4.5 7C4.5 7.55228 4.05228 8 3.5 8C2.94772 8 2.5 7.55228 2.5 7C2.5 6.44772 2.94772 6 3.5 6C4.05228 6 4.5 6.44772 4.5 7Z" />
-    <path d="M4.5 11C4.5 11.5523 4.05228 12 3.5 12C2.94772 12 2.5 11.5523 2.5 11C2.5 10.4477 2.94772 10 3.5 10C4.05228 10 4.5 10.4477 4.5 11Z" />
-    <path d="M10.5 3C10.5 3.55228 10.0523 4 9.5 4C8.94772 4 8.5 3.55228 8.5 3C8.5 2.44772 8.94772 2 9.5 2C10.0523 2 10.5 2.44772 10.5 3Z" />
-    <path d="M10.5 7C10.5 7.55228 10.0523 8 9.5 8C8.94772 8 8.5 7.55228 8.5 7C8.5 6.44772 8.94772 6 9.5 6C10.0523 6 10.5 6.44772 10.5 7Z" />
-    <path d="M10.5 11C10.5 11.5523 10.0523 12 9.5 12C8.94772 12 8.5 11.5523 8.5 11C8.5 10.4477 8.94772 10 9.5 10C10.0523 10 10.5 10.4477 10.5 11Z" />
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="8" y1="21" x2="8" y2="3"></line>
+    <line x1="16" y1="21" x2="16" y2="3"></line>
   </svg>
 );
 
 const RemoveIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18"></line>
-    <line x1="6" y1="6" x2="18" y2="18"></line>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6L6 18M6 6l12 12"></path>
   </svg>
 );
 
-const getCityTimeShift = (timezone: string) => {
-  const d = new Date();
-  const cityTime = new Date(d.toLocaleString("en-US", { timeZone: timezone })).getTime();
-  const localTime = new Date(d.toLocaleString("en-US")).getTime();
-  return (cityTime - localTime) / 3600000;
-};
-
-function getUTCHourFromSlider(pct: number): number {
-  return Math.floor((pct / 100) * 24) % 24;
-}
-
-function getLocalHourAtUTC(utcHour: number, tz: string): number {
+// --- Task 1: Fix Health Calculation ---
+function getLocalHourAtUTC(utcHour: number, tz: string, date: Date): number {
   try {
-    const now = new Date();
-    now.setUTCHours(utcHour, 0, 0, 0);
-    const formatted = new Intl.DateTimeFormat('en-US', {
+    const d = new Date(date);
+    d.setUTCHours(utcHour, 0, 0, 0);
+    const parts = new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
       hour12: false,
       timeZone: tz,
-    }).format(now);
-    const h = parseInt(formatted, 10);
-    return isNaN(h) ? 0 : h % 24;
-  } catch {
-    return 0;
-  }
+    }).formatToParts(d);
+    const h = parseInt(
+      parts.find(p => p.type === 'hour')?.value ?? '0', 10
+    );
+    return isNaN(h) ? 0 : h === 24 ? 0 : h;
+  } catch { return 0; }
 }
 
-function getMeetingHealth(sliderPct: number, cities: City[]) {
-  const utcHour = getUTCHourFromSlider(sliderPct);
+function getHealth(sliderPct: number, cities: City[], date: Date) {
+  const utcH = Math.round((sliderPct / 100) * 23);
   const available = cities.filter(c => {
-    const localH = getLocalHourAtUTC(utcHour, c.timezone);
-    return localH >= 9 && localH < 17;
+    const h = getLocalHourAtUTC(utcH, c.timezone, date);
+    return h >= 9 && h < 17;
   });
   const a = available.length;
   const t = cities.length;
-  const r = t > 0 ? a / t : 0;
-  if (r === 1)   return { label: `✓ Perfect — all ${t} available`,    color: '#16a34a', bg: 'rgba(22,163,74,0.1)' };
-  if (r >= 0.75) return { label: `Good — ${a}/${t} available`,           color: '#ca8a04', bg: 'rgba(202,138,4,0.1)' };
-  if (r >= 0.5)  return { label: `Fair — ${a}/${t} available`,           color: '#d97706', bg: 'rgba(217,119,6,0.1)' };
-  return               { label: `Poor — only ${a}/${t} in hours`,        color: '#dc2626', bg: 'rgba(220,38,38,0.1)' };
+  const r = t === 0 ? 0 : a / t;
+  if (r === 1)   return { label: `✓ Perfect — all ${t} available`,   color: '#16a34a', bg: 'rgba(22,163,74,0.1)'   };
+  if (r >= 0.75) return { label: `Good — ${a}/${t} available`,        color: '#ca8a04', bg: 'rgba(202,138,4,0.1)'  };
+  if (r >= 0.5)  return { label: `Fair — ${a}/${t} available`,        color: '#d97706', bg: 'rgba(217,119,6,0.1)'  };
+  return               { label: `Poor — only ${a}/${t} in hours`,    color: '#dc2626', bg: 'rgba(220,38,38,0.1)'  };
 }
 
-const TimelineBar = ({ city, isFirstRow }: { city: City; isFirstRow: boolean }) => {
-  const shift = useMemo(() => getCityTimeShift(city.timezone), [city.timezone]);
+const TimelineBar = ({ city, isFirstRow, selectedDate }: { city: City; isFirstRow: boolean; selectedDate: Date }) => {
+  // DST check for row warning
+  const today = new Date();
+  const offsetToday = getOffsetForDate(city.timezone, today);
+  const offsetSelected = getOffsetForDate(city.timezone, selectedDate);
+  const dstChanged = offsetToday !== offsetSelected;
 
   const renderSegment = (start: number, end: number, bgColor: string, borderColor?: string, boxShadow?: string) => {
+    // We need to calculate shift based on selectedDate
+    const utcDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: "UTC" }));
+    const tzDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: city.timezone }));
+    const shift = (tzDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60);
+
     return [-1, 0, 1].map((day) => {
       const localStart = start - shift + day * 24;
       const localEnd = end - shift + day * 24;
@@ -147,54 +145,56 @@ const TimelineBar = ({ city, isFirstRow }: { city: City; isFirstRow: boolean }) 
         className="absolute inset-0 pointer-events-none z-[2]"
         style={{ background: 'var(--timeline-gradient)' }}
       />
-      
-      {/* Hour tick marks at every 3h */}
-      {[3, 6, 9, 12, 15, 18, 21].map(h => (
-        <div 
-          key={`tick-${h}`}
-          className="absolute bottom-0 w-[1px] h-[4px] z-[3]"
-          style={{ left: `${(h/24)*100}%`, background: 'rgba(34,42,53,0.12)' }}
-        />
-      ))}
+
+      {dstChanged && (
+        <div className="absolute top-1 right-1 px-1.5 py-0.5 bg-[rgba(245,158,11,0.1)] text-[#d97706] text-[9px] font-bold rounded z-10 opacity-80 pointer-events-none">
+          ⚠ DST changes
+        </div>
+      )}
     </div>
   );
 };
 
-const Timeline = ({
-  cities,
-  now,
-  timeFormat,
-  onRemoveCity,
+const Timeline = ({ 
+  cities, 
+  now, 
+  selectedDate,
+  timeFormat, 
+  onRemoveCity, 
   onReorderCities,
   meetingPercent,
-  setMeetingPercent,
+  setMeetingPercent 
 }: TimelineProps) => {
   const [hoverPercent, setHoverPercent] = useState<number | null>(null);
-  const [hoverPos, setHoverPos] = useState({ left: 0, top: 20 });
-  const containerRef = useRef<HTMLDivElement>(null);
-
+  const [hoverPos, setHoverPos] = useState({ left: 0, top: 0 });
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [isVisible, setIsVisible] = useState(false);
+  const [showCalendarMenu, setShowCalendarMenu] = useState(false);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const calendarMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) {
-        setIsVisible(true);
-        observer.disconnect();
+    setIsVisible(true);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (calendarMenuRef.current && !calendarMenuRef.current.contains(e.target as Node)) {
+        setShowCalendarMenu(false);
       }
-    }, { threshold: 0.1 });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     
     const isMobile = window.innerWidth < 768;
     const rightAreaLeft = isMobile ? rect.left : rect.left + 200; 
@@ -227,7 +227,7 @@ const Timeline = ({
 
   const blocks = useMemo(() => {
     if (cities.length === 0) return [];
-    const overlaps = getOverlapHours(cities.map((c) => c.timezone));
+    const overlaps = getOverlapHours(cities.map((c) => c.timezone), selectedDate);
     const res: { start: number; end: number }[] = [];
     if (overlaps.length > 0) {
       let start = overlaps[0];
@@ -245,39 +245,36 @@ const Timeline = ({
       }
     }
     return res;
-  }, [cities]);
+  }, [cities, selectedDate]);
 
-  const baseShift = cities.length > 0 ? getCityTimeShift(cities[0].timezone) : 0;
   const nowPercent = hourToPercent(now.getHours(), now.getMinutes());
+  const isFuture = selectedDate.toDateString() !== new Date().toDateString();
+  const currentSliderPercent = meetingPercent !== null ? meetingPercent : (isFuture ? 50 : nowPercent);
   
-  const currentSliderPercent = meetingPercent !== null ? meetingPercent : nowPercent;
-
   const hoverDate = useMemo(() => {
-    if (hoverPercent === null) return now;
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    if (hoverPercent === null) return selectedDate;
+    const d = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
     const totalMinutes = Math.round((hoverPercent / 100) * 24 * 60);
     return new Date(d.getTime() + totalMinutes * 60 * 1000);
-  }, [hoverPercent, now]);
+  }, [hoverPercent, selectedDate]);
   
   const getMeetingDateStr = (timezone: string) => {
     if (meetingPercent === null) return "";
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const d = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
     const totalMinutes = Math.round((meetingPercent / 100) * 24 * 60);
     const targetDate = new Date(d.getTime() + totalMinutes * 60 * 1000);
-    
     return formatTime(targetDate, timezone, timeFormat);
   };
 
   const getDayIndicator = (timezone: string) => {
     const targetDate = meetingPercent !== null 
-      ? new Date(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime() + Math.round((meetingPercent / 100) * 24 * 60) * 60000)
-      : now;
+      ? new Date(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0).getTime() + Math.round((meetingPercent / 100) * 24 * 60) * 60000)
+      : (isFuture ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 12, 0, 0, 0) : now);
       
     const utcDateStr = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", year: 'numeric', month: '2-digit', day: '2-digit' }).format(targetDate);
     const localDateStr = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(targetDate);
     
     if (utcDateStr === localDateStr) return null;
-    
     const uParts = utcDateStr.split('/');
     const lParts = localDateStr.split('/');
     const uInt = parseInt(`${uParts[2]}${uParts[0]}${uParts[1]}`);
@@ -289,17 +286,15 @@ const Timeline = ({
   };
 
   const markers = [0, 3, 6, 9, 12, 15, 18, 21];
-
   const [copied, setCopied] = useState(false);
+
   const handleCopyTimes = (e: React.MouseEvent) => {
     e.stopPropagation();
-    
     const baseHourStr = formatTime(hoverDate, "UTC", timeFormat);
     const title = `${baseHourStr} UTC\n`;
-    
     const txt = title + cities.map(c => {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      const tm = Math.round(((meetingPercent ?? hoverPercent ?? nowPercent) / 100) * 24 * 60);
+      const d = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
+      const tm = Math.round(((hoverPercent ?? currentSliderPercent) / 100) * 24 * 60);
       const td = new Date(d.getTime() + tm * 60 * 1000);
       return `${c.name}: ${formatTime(td, c.timezone, "12h")}`;
     }).join('\n');
@@ -310,19 +305,31 @@ const Timeline = ({
     });
   };
 
-  const handleCreateEvent = () => {
-    if (meetingPercent === null) return;
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const totalMinutes = Math.round((meetingPercent / 100) * 24 * 60);
-    d.setTime(d.getTime() + totalMinutes * 60 * 1000);
-    
-    const startUTC = d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  const buildCalendarUrls = () => {
+    const utcH = Math.round((currentSliderPercent / 100) * 23);
+    const d = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
+    d.setUTCHours(utcH, 0, 0, 0);
     const endD = new Date(d.getTime() + 60 * 60 * 1000);
-    const endUTC = endD.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     
-    const cityTimes = cities.map(c => {
-      return `${c.name}: ${formatTime(d, c.timezone, "12h")}`;
-    }).join('\\n');
+    const fmt = (date: Date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const start = fmt(d);
+    const end = fmt(endD);
+    
+    const cityTimes = cities.map(c => `${c.name}: ${formatTime(d, c.timezone, "12h")}`).join('\n');
+    const encodedDetails = encodeURIComponent(cityTimes);
+    const encodedTitle = encodeURIComponent("Meeting — Orbit");
+    
+    return {
+      google: `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodedTitle}&dates=${start}/${end}&details=${encodedDetails}&location=Remote+/+Online`,
+      outlook: `https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodedTitle}&startdt=${d.toISOString()}&enddt=${endD.toISOString()}&body=${encodedDetails}&location=Remote+/+Online`,
+      ics: d
+    };
+  };
+
+  const handleDownloadICS = (d: Date) => {
+    const startUTC = d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const endUTC = new Date(d.getTime() + 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const cityTimes = cities.map(c => `${c.name}: ${formatTime(d, c.timezone, "12h")}`).join('\\n');
     
     const ics = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -347,16 +354,16 @@ END:VCALENDAR`;
 
   const healthScore = useMemo(() => {
     if (cities.length === 0) return null;
-    return getMeetingHealth(currentSliderPercent, cities);
-  }, [currentSliderPercent, cities]);
-
-  const meetingDateObj = meetingPercent !== null 
-    ? new Date(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime() + Math.round((meetingPercent / 100) * 24 * 60) * 60000)
-    : null;
+    return getHealth(currentSliderPercent, cities, selectedDate);
+  }, [currentSliderPercent, cities, selectedDate]);
 
   return (
     <div className="relative w-full pb-[40px]">
       <style>{`
+        @keyframes nowRipple {
+          0% { transform: scale(1); opacity: 0.8; }
+          100% { transform: scale(3.5); opacity: 0; }
+        }
         @keyframes slideInLeft {
           from { opacity: 0; transform: translateX(-16px); }
           to { opacity: 1; transform: translateX(0); }
@@ -407,22 +414,7 @@ END:VCALENDAR`;
           box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
           cursor: pointer;
         }
-        
-        [data-theme="dark"] .tick-mark {
-          background-color: rgba(255,255,255,0.15) !important;
-        }
       `}</style>
-
-      <div className="relative w-full flex justify-end h-6 items-center mb-2">
-        {meetingPercent !== null && (
-          <button 
-            onClick={() => setMeetingPercent(null)}
-            className="text-[11px] font-sans font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors duration-150 absolute right-0 -top-6 bg-transparent"
-          >
-            ↺ Now
-          </button>
-        )}
-      </div>
 
       <div
         className="w-full relative select-none z-10"
@@ -460,6 +452,11 @@ END:VCALENDAR`;
           <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-10 hidden md:block">
             {blocks.map((block, idx) => {
               return [-1, 0, 1].map((day) => {
+                // Calculate base shift for blocks too
+                const utcDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: "UTC" }));
+                const tzDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: cities[0]?.timezone || "UTC" }));
+                const baseShift = (tzDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60);
+
                 const localStart = block.start - baseShift + day * 24;
                 const localEnd = block.end - baseShift + day * 24;
                 if (localEnd <= 0 || localStart >= 24) return null;
@@ -486,38 +483,29 @@ END:VCALENDAR`;
             })}
           </div>
 
-          {/* Now Indicator & Needle */}
+          {/* Now Indicator & Zenith Needle (Task 2: Fixed Gap) */}
           <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-20">
             <div
-              className="absolute top-0 bottom-0 w-[1px] bg-[var(--text-primary)] transition-all duration-[50ms] ease-linear now-indicator-line"
-              style={{ left: `${currentSliderPercent}%` }}
+              className="absolute top-0 w-[1px] bg-[var(--text-primary)] transition-all duration-[50ms] ease-linear"
+              style={{ left: `${currentSliderPercent}%`, height: '100%' }}
             >
-              {/* Dot + ripple ring */}
-              <div className="absolute -top-[3px] left-1/2 -translate-x-1/2">
-                <div className="w-[7px] h-[7px] bg-[var(--text-primary)] rounded-full now-indicator-dot relative">
-                  <div
-                    className="absolute inset-0 rounded-full"
-                    style={{
-                      border: '1px solid var(--text-primary)',
-                      animation: 'nowRipple 2s ease-out infinite',
-                      transformOrigin: 'center',
-                    }}
-                  />
+              {!isFuture && meetingPercent === null && (
+                <div className="absolute -top-[3px] left-1/2 -translate-x-1/2">
+                  <div className="w-[7px] h-[7px] bg-[var(--text-primary)] rounded-full relative">
+                    <div className="absolute inset-0 rounded-full" style={{ border: '1px solid var(--text-primary)', animation: 'nowRipple 2s ease-out infinite' }} />
+                  </div>
                 </div>
-              </div>
-              
-              {/* Timestamp Label below rows */}
-              <div 
-                className="absolute top-full mt-[8px] left-1/2 -translate-x-1/2 bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[6px] px-[8px] py-[2px] text-[11px] font-semibold font-sans text-[var(--text-primary)] whitespace-nowrap time-display"
-                style={{ boxShadow: 'var(--shadow-sm)' }}
-              >
-                {meetingPercent !== null ? getMeetingDateStr(Intl.DateTimeFormat().resolvedOptions().timeZone) : formatTime(now, Intl.DateTimeFormat().resolvedOptions().timeZone, timeFormat)}
-              </div>
-
-              {/* Scrubber Connector Line */}
-              {meetingPercent !== null && (
-                <div className="absolute top-[calc(100%+32px)] left-1/2 -translate-x-1/2 w-[1px] h-[24px] border-l border-dashed border-[var(--border-strong)] pointer-events-none" />
               )}
+              
+              {/* Task 2: Fixed Zenith Needle & Label */}
+              <div 
+                className="absolute left-1/2 -translate-x-1/2 bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[6px] px-[8px] py-[2px] text-[10px] font-bold font-sans text-[var(--text-primary)] whitespace-nowrap"
+                style={{ top: '100%', boxShadow: 'var(--shadow-sm)' }}
+              >
+                {/* Upward Caret */}
+                <div style={{ width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '5px solid var(--border-default)', position: 'absolute', top: -5, left: '50%', transform: 'translateX(-50%)' }} />
+                {getMeetingDateStr(Intl.DateTimeFormat().resolvedOptions().timeZone) || formatTime(isFuture ? new Date(selectedDate.setHours(12,0,0,0)) : now, Intl.DateTimeFormat().resolvedOptions().timeZone, timeFormat)}
+              </div>
             </div>
           </div>
 
@@ -547,7 +535,7 @@ END:VCALENDAR`;
                     </div>
                     <div className="flex flex-col gap-[6px]">
                       {cities.map((c) => {
-                        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+                        const d = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
                         const tm = Math.round((hoverPercent / 100) * 24 * 60);
                         const td = new Date(d.getTime() + tm * 60 * 1000);
                         return (
@@ -580,7 +568,7 @@ END:VCALENDAR`;
           {/* Rows */}
           <div className="relative bg-[var(--bg-page)]">
             {cities.map((city, idx) => {
-              const activeDST = isDSTActive(city.timezone);
+              const activeDST = isDSTActive(city.timezone, selectedDate);
               const dayInd = getDayIndicator(city.timezone);
               
               return (
@@ -617,13 +605,11 @@ END:VCALENDAR`;
                     setDragOverIdx(null);
                   }}
                 >
-                  {/* Left Sidebar - Typographic Hierarchy */}
                   <div className="w-[200px] min-w-[200px] max-w-[200px] shrink-0 h-auto md:h-full pr-[16px] relative flex flex-col justify-center gap-[2px] bg-[var(--bg-surface)] py-2 md:py-0 px-3 md:px-0 rounded-md md:rounded-none md:bg-transparent">
                     <div className="hidden md:block absolute left-0 opacity-0 group-hover:opacity-100 cursor-grab text-[var(--text-muted)] p-2 -ml-5">
                       <DragHandleIcon />
                     </div>
 
-                    {/* Row 1 */}
                     <div className="flex items-center gap-1.5 md:pl-2">
                       <span className="w-[24px] text-[16px] leading-none text-center flex-shrink-0">{city.emoji}</span>
                       <span className="text-[14px] font-display font-semibold text-[var(--text-primary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap">
@@ -631,41 +617,33 @@ END:VCALENDAR`;
                       </span>
                     </div>
                     
-                    {/* Row 2 */}
                     <div className="pl-[30px] md:pl-[38px] text-[11px] font-sans text-[var(--text-secondary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap mt-0.5">
                       {city.country}
                     </div>
 
-                    {/* Row 2.5 - Analog Clock (Specific Requirement) */}
                     <div className="pl-[30px] md:pl-[38px] mt-1.5 mb-1.5">
-                      <AnalogClock timezone={city.timezone} size={22} />
+                      <AnalogClock timezone={city.timezone} size={22} selectedDate={selectedDate} />
                     </div>
 
-                    {/* Row 3 */}
                     <div className="pl-[30px] md:pl-[38px] flex items-center gap-2">
-                      <div className="transition-all duration-[120ms] ease-in-out badge-container">
-                        <span 
-                          key={meetingPercent !== null ? Math.floor(meetingDateObj?.getTime()! / 1000) : now.getSeconds()}
-                          className={`inline-block text-[20px] font-sans font-bold text-[var(--text-primary)] leading-none tracking-tight time-display ${meetingPercent === null ? "pulse-time" : ""}`}
-                          style={{ animation: 'fadeTime 0.15s ease' }}
-                        >
-                          {meetingPercent !== null ? getMeetingDateStr(city.timezone) : formatTime(now, city.timezone, timeFormat)}
-                        </span>
-                      </div>
+                      <span 
+                        className={`inline-block text-[20px] font-sans font-bold text-[var(--text-primary)] leading-none tracking-tight time-display ${meetingPercent === null && !isFuture ? "pulse-time" : ""}`}
+                      >
+                        {getMeetingDateStr(city.timezone) || formatTime(isFuture ? new Date(selectedDate.setHours(12,0,0,0)) : now, city.timezone, timeFormat)}
+                      </span>
                     </div>
 
-                    {/* Row 4 */}
                     <div className="pl-[30px] md:pl-[38px] flex flex-wrap items-center gap-1 mt-[4px]">
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400, background: 'none', border: 'none', padding: 0, opacity: 0.6 }}>
-                        {getOffsetString(city.timezone)}
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400, opacity: 0.6 }}>
+                        {getOffsetString(city.timezone, selectedDate)}
                       </div>
                       {activeDST && (
-                        <div style={{ fontSize: 9, color: 'var(--text-muted)', background: 'none', border: 'none', opacity: 0.5, fontWeight: 400 }}>
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', opacity: 0.5, fontWeight: 400 }}>
                           DST
                         </div>
                       )}
                       {dayInd && (
-                        <div style={{ fontSize: 9, color: '#d97706', opacity: 0.7, background: 'none', border: 'none' }}>
+                        <div style={{ fontSize: 9, color: '#d97706', opacity: 0.7 }}>
                           {dayInd.label}
                         </div>
                       )}
@@ -685,9 +663,8 @@ END:VCALENDAR`;
                     </button>
                   </div>
 
-                  {/* Right Area (Timeline Bar) */}
                   <div className="flex-1 w-full min-w-0 relative flex items-center h-[48px] md:h-full">
-                    <TimelineBar city={city} isFirstRow={idx === 0} />
+                    <TimelineBar city={city} isFirstRow={idx === 0} selectedDate={selectedDate} />
                   </div>
                 </div>
               );
@@ -696,7 +673,7 @@ END:VCALENDAR`;
         </div>
       </div>
 
-      {/* Meeting Time Finder Slider */}
+      {/* Scrubber / Slider */}
       {cities.length > 0 && (
         <div className="mt-[24px] flex flex-col items-center w-full md:pl-[200px] relative z-20">
            <div className="flex items-center gap-3 mb-3">
@@ -706,11 +683,7 @@ END:VCALENDAR`;
              {healthScore && (
                <div 
                  className="px-[14px] py-[10px] rounded-full text-[12px] font-sans font-semibold shadow-sm"
-                 style={{ 
-                   backgroundColor: healthScore.bg, 
-                   color: healthScore.color,
-                   transition: 'background-color 250ms ease, color 250ms ease, border-color 250ms ease'
-                 }}
+                 style={{ backgroundColor: healthScore.bg, color: healthScore.color, transition: 'all 250ms ease' }}
                >
                  {healthScore.label}
                </div>
@@ -718,19 +691,11 @@ END:VCALENDAR`;
            </div>
            
            <div className="relative w-full h-[20px] flex items-center group">
-             {/* Custom Track */}
              <div className="absolute left-0 right-0 h-[4px] bg-[var(--border-strong)] rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-[var(--text-primary)] transition-all duration-75" 
-                  style={{ width: `${currentSliderPercent}%` }} 
-                />
+                <div className="h-full bg-[var(--text-primary)] transition-all duration-75" style={{ width: `${currentSliderPercent}%` }} />
              </div>
-             {/* Slider Input */}
              <input 
-               type="range" 
-               min="0" 
-               max="100" 
-               step="0.1" 
+               type="range" min="0" max="100" step="0.1" 
                value={currentSliderPercent}
                onChange={(e) => setMeetingPercent(parseFloat(e.target.value))}
                className="meeting-slider absolute inset-0 w-full h-full opacity-0 z-30 cursor-pointer"
@@ -741,21 +706,53 @@ END:VCALENDAR`;
              />
            </div>
            
-           <div className="flex items-center gap-[12px] mt-6">
+           {isFuture && (
+             <div className="mt-2 text-[10px] text-[var(--text-muted)] font-sans">No live indicator for future dates</div>
+           )}
+
+           <div className="flex items-center gap-[12px] mt-6 relative">
              {meetingPercent !== null && (
                <>
-                 <button 
-                   onClick={() => setMeetingPercent(null)}
-                   className="text-[12px] font-sans font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] underline underline-offset-2 transition-colors"
-                 >
-                   Reset to live time
-                 </button>
-                 <button
-                   onClick={handleCreateEvent}
-                   className="flex items-center gap-[6px] shadow-sm border border-[var(--border-default)] rounded-[8px] px-[14px] py-[10px] text-[13px] font-sans font-semibold text-[var(--text-primary)] bg-[var(--bg-page)] hover:shadow-md hover:-translate-y-[1px] transition-all duration-150"
-                 >
-                   📅 Add to Calendar
-                 </button>
+                 {!isFuture && (
+                   <button 
+                     onClick={() => setMeetingPercent(null)}
+                     className="text-[12px] font-sans font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] underline underline-offset-2 transition-colors"
+                   >
+                     Reset to live time
+                   </button>
+                 )}
+                 <div className="relative" ref={calendarMenuRef}>
+                    <button
+                      onClick={() => setShowCalendarMenu(!showCalendarMenu)}
+                      className="flex items-center gap-[6px] shadow-sm border border-[var(--border-default)] rounded-[8px] px-[14px] py-[10px] text-[13px] font-sans font-semibold text-[var(--text-primary)] bg-[var(--bg-page)] hover:shadow-md hover:-translate-y-[1px] transition-all duration-150"
+                    >
+                      📅 Add to Calendar
+                    </button>
+                    {showCalendarMenu && (
+                      <div className="absolute bottom-full left-0 mb-2 w-[200px] bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[8px] shadow-lg p-1 z-50">
+                        <button 
+                          onClick={() => { handleDownloadICS(buildCalendarUrls().ics); setShowCalendarMenu(false); }}
+                          className="w-full text-left px-3 py-2 text-[12px] font-sans hover:bg-[var(--bg-surface)] rounded-md transition-colors"
+                        >
+                          📅 Download .ics
+                        </button>
+                        <a 
+                          href={buildCalendarUrls().google} target="_blank" rel="noopener noreferrer"
+                          className="block w-full text-left px-3 py-2 text-[12px] font-sans hover:bg-[var(--bg-surface)] rounded-md transition-colors"
+                          onClick={() => setShowCalendarMenu(false)}
+                        >
+                          Google Calendar
+                        </a>
+                        <a 
+                          href={buildCalendarUrls().outlook} target="_blank" rel="noopener noreferrer"
+                          className="block w-full text-left px-3 py-2 text-[12px] font-sans hover:bg-[var(--bg-surface)] rounded-md transition-colors"
+                          onClick={() => setShowCalendarMenu(false)}
+                        >
+                          Outlook Calendar
+                        </a>
+                      </div>
+                    )}
+                 </div>
                </>
              )}
            </div>

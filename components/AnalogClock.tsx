@@ -4,14 +4,17 @@ import React, { useEffect, useState, memo } from 'react';
 interface AnalogClockProps {
   timezone: string;
   size?: number;
+  selectedDate?: Date;
 }
 
-const AnalogClock = ({ timezone, size = 22 }: AnalogClockProps) => {
+const AnalogClock = ({ timezone, size = 22, selectedDate }: AnalogClockProps) => {
   const [time, setTime] = useState({ h: 0, m: 0, s: 0 });
   
   useEffect(() => {
+    const isToday = !selectedDate || selectedDate.toDateString() === new Date().toDateString();
+    
     const update = () => {
-      const now = new Date();
+      const now = isToday ? new Date() : new Date(selectedDate!.setHours(12, 0, 0, 0));
       const parts = new Intl.DateTimeFormat('en-US', {
         hour: 'numeric', minute: 'numeric', second: 'numeric',
         hour12: false, timeZone: timezone
@@ -24,10 +27,13 @@ const AnalogClock = ({ timezone, size = 22 }: AnalogClockProps) => {
         s: get('second') 
       });
     };
+    
     update();
-    const t = setInterval(update, 1000);
-    return () => clearInterval(t);
-  }, [timezone]);
+    if (isToday) {
+      const t = setInterval(update, 1000);
+      return () => clearInterval(t);
+    }
+  }, [timezone, selectedDate]);
 
   const cx = size / 2;
   const cy = size / 2;
