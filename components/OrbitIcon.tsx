@@ -1,11 +1,13 @@
 'use client';
 
-export function OrbitIcon({ 
+import React, { memo } from 'react';
+
+export const OrbitIcon = memo(function OrbitIcon({ 
   size = 18, 
   speed = 3,
   className = "",
 }: { 
-  size?: number;
+  size?: number; 
   speed?: number;
   className?: string;
 }) {
@@ -40,4 +42,4 @@ export function OrbitIcon({
       </svg>
     </>
   );
-}
+});

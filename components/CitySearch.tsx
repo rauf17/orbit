@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { City, cities as allCities } from "../lib/cities";
 import { formatTime, getOffsetString } from "../lib/timeUtils";
+import { useToast } from "../hooks/useToast";
 
 interface CitySearchProps {
   onAddCity: (city: City) => void;
@@ -31,6 +32,8 @@ const CheckIcon = () => (
     <polyline points="20 6 9 17 4 12"></polyline>
   </svg>
 );
+
+const POPULAR_CITY_IDS = ["new-york", "london", "tokyo", "dubai", "sydney", "paris", "singapore", "toronto"];
 
 const CONTINENTS = [
   { name: "All", emoji: "🌍" },
@@ -69,30 +72,35 @@ export default function CitySearch({
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [now, setNow] = useState(initialNow);
   const [addedId, setAddedId] = useState<string | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   const popoverRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { showToast } = useToast();
 
   const disabled = selectedCities.length >= maxCities;
 
   // Sync internal clock for live time in results
   useEffect(() => {
-    if (!isOpen) return;
-    const t = setInterval(() => setNow(new Date()), 5000);
+    const t = setInterval(() => setNow(new Date()), 1000); // 1s interval as requested
     return () => clearInterval(t);
-  }, [isOpen]);
+  }, []);
 
   // Global keyboard shortcut
   useEffect(() => {
     const handleGlobalKey = (e: KeyboardEvent) => {
-      if (e.key === "/" && !isOpen && !disabled) {
+      if (e.key === "/" && !isOpen) {
+        if (disabled) {
+          showToast({ message: "Maximum 6 cities reached", type: "error" });
+          return;
+        }
         e.preventDefault();
         setIsOpen(true);
       }
     };
     window.addEventListener("keydown", handleGlobalKey);
     return () => window.removeEventListener("keydown", handleGlobalKey);
-  }, [isOpen, disabled]);
+  }, [isOpen, disabled, showToast]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -116,7 +124,22 @@ export default function CitySearch({
     }
   }, [isOpen]);
 
+  // Smooth result transitions logic
+  useEffect(() => {
+    setIsTransitioning(true);
+    const t = setTimeout(() => setIsTransitioning(false), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery, selectedContinent]);
+
   const filteredCities = useMemo(() => {
+    if (!searchQuery && selectedContinent === "All") {
+      // Show popular cities not already added
+      return POPULAR_CITY_IDS
+        .map(id => allCities.find(c => c.id === id))
+        .filter((c): c is City => c !== undefined && !selectedCities.some(sc => sc.id === c.id))
+        .slice(0, 8);
+    }
+
     return allCities
       .filter((c) => {
         const query = searchQuery.toLowerCase();
@@ -127,20 +150,25 @@ export default function CitySearch({
         return matchesSearch && matchesContinent;
       })
       .slice(0, 8);
-  }, [searchQuery, selectedContinent]);
+  }, [searchQuery, selectedContinent, selectedCities]);
 
   // Reset highlight when list changes
   useEffect(() => {
     setHighlightedIndex(0);
   }, [filteredCities]);
 
-  const handleAdd = (city: City) => {
+  const handleAdd = useCallback((city: City) => {
     if (selectedCities.some(c => c.id === city.id)) return;
+    if (selectedCities.length >= maxCities) {
+      showToast({ message: "Maximum 6 cities reached", type: "error" });
+      return;
+    }
     setAddedId(city.id);
     onAddCity(city);
+    showToast({ message: `${city.name} added`, type: "success" });
     // Tiny delay before closing
     setTimeout(() => setIsOpen(false), 600);
-  };
+  }, [selectedCities, maxCities, onAddCity, showToast]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -157,6 +185,8 @@ export default function CitySearch({
       setIsOpen(false);
     }
   };
+
+  const isPopular = !searchQuery && selectedContinent === "All";
 
   return (
     <div className="relative inline-block" ref={popoverRef} style={{ zIndex: 9999 }}>
@@ -176,6 +206,12 @@ export default function CitySearch({
           -ms-overflow-style: none;
           scrollbar-width: none;
         }
+        .search-results-container {
+          transition: opacity 150ms ease;
+        }
+        .search-results-transitioning {
+          opacity: 0;
+        }
       `}</style>
 
       {/* Trigger Button */}
@@ -183,7 +219,7 @@ export default function CitySearch({
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
         title={disabled ? "Max 6 cities" : undefined}
-        className={`flex items-center gap-2 bg-[var(--bg-page)] rounded-[8px] px-4 py-2.5 shadow-sm border border-[var(--border-default)] text-[14px] font-sans font-semibold text-[var(--text-primary)] transition-all duration-150
+        className={`flex items-center gap-2 bg-[var(--bg-page)] rounded-[8px] px-4 py-2.5 shadow-sm border border-[var(--border-default)] text-[14px] font-sans font-semibold text-[var(--text-primary)] transition-all duration-150 w-full md:w-auto justify-center
           ${
             disabled
               ? "opacity-40 cursor-not-allowed"
@@ -203,8 +239,8 @@ export default function CitySearch({
       {/* Dropdown Popover */}
       {isOpen && (
         <div
-          className="city-search-dropdown absolute left-0 w-[340px] bg-[var(--bg-elevated)] rounded-[12px] shadow-lg border border-[var(--border-default)] overflow-hidden flex flex-col"
-          style={{ zIndex: 9999, top: 'calc(100% + 8px)', animation: "popoverIn 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards", position: 'absolute', isolation: 'isolate' }}
+          className="city-search-dropdown fixed md:absolute left-1/2 -translate-x-1/2 md:left-0 md:translate-x-0 w-[calc(100vw-32px)] md:w-[340px] max-h-[60vh] bg-[var(--bg-elevated)] rounded-[12px] shadow-lg border border-[var(--border-default)] overflow-hidden flex flex-col"
+          style={{ zIndex: 10000, top: 'calc(100% + 8px)', animation: "popoverIn 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards", isolation: 'isolate' }}
         >
           {/* Search Input */}
           <div className="flex items-center w-full px-4 border-b border-[var(--border-default)]">
@@ -243,7 +279,11 @@ export default function CitySearch({
           </div>
 
           {/* Results List */}
-          <div className="max-h-[280px] overflow-y-auto p-2">
+          <div className={`max-h-[280px] md:max-h-[320px] overflow-y-auto p-2 search-results-container ${isTransitioning ? 'search-results-transitioning' : ''}`}>
+            {isPopular && filteredCities.length > 0 && (
+              <div className="px-2.5 pt-1 pb-2 text-[11px] font-sans font-bold text-[var(--text-muted)] uppercase tracking-wider">Popular Cities</div>
+            )}
+            
             {filteredCities.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-6 text-center">
                 <span className="text-2xl mb-2">🌍</span>
@@ -261,26 +301,19 @@ export default function CitySearch({
                       key={city.id}
                       onClick={() => !isAdded && handleAdd(city)}
                       onMouseEnter={() => !isAdded && setHighlightedIndex(idx)}
+                      title={isAdded ? "Already added" : undefined}
                       className={`flex items-center justify-between px-2.5 py-2.5 rounded-[8px] transition-colors
-                        ${isAdded ? "cursor-default" : "cursor-pointer"}
+                        ${isAdded ? "cursor-default opacity-50" : "cursor-pointer"}
                         ${isHighlighted ? "bg-[var(--bg-surface)]" : "bg-transparent"}
                       `}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="text-[20px] leading-none flex-shrink-0">{city.emoji}</span>
                         <div className="flex flex-col min-w-0">
-                          <span
-                            className={`text-[13px] font-display font-semibold leading-tight truncate
-                              ${isAdded ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"}
-                            `}
-                          >
+                          <span className={`text-[13px] font-display font-semibold leading-tight truncate text-[var(--text-primary)]`}>
                             {city.name}
                           </span>
-                          <span
-                            className={`text-[11px] font-sans leading-tight truncate mt-0.5
-                              ${isAdded ? "text-[var(--text-muted)]" : "text-[var(--text-secondary)]"}
-                            `}
-                          >
+                          <span className={`text-[11px] font-sans leading-tight truncate mt-0.5 text-[var(--text-secondary)]`}>
                             {city.country}
                           </span>
                         </div>
@@ -293,18 +326,10 @@ export default function CitySearch({
                           </div>
                         ) : (
                           <div className="flex flex-col items-end">
-                            <span
-                              className={`text-[12px] font-sans font-semibold leading-tight tabular-nums
-                                ${isAdded ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"}
-                              `}
-                            >
+                            <span className={`text-[12px] font-sans font-semibold leading-tight tabular-nums text-[var(--text-primary)]`}>
                               {formatTime(now, city.timezone, timeFormat)}
                             </span>
-                            <span
-                              className={`text-[10px] font-sans leading-tight mt-0.5
-                                ${isAdded ? "text-[var(--text-muted)]" : "text-[var(--text-secondary)]"}
-                              `}
-                            >
+                            <span className={`text-[10px] font-sans leading-tight mt-0.5 text-[var(--text-secondary)]`}>
                               {getOffsetString(city.timezone)}
                             </span>
                           </div>

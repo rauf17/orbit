@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo, memo } from "react";
+import React, { useState, useRef, useEffect, useMemo, memo, useCallback } from "react";
 import { City } from "../lib/cities";
 import { 
   formatTime, 
@@ -8,11 +8,11 @@ import {
   isDSTActive, 
   getOverlapHours, 
   hourToPercent, 
-  getTimeAtPercent,
   getOffsetForDate 
 } from "../lib/timeUtils";
 import { OrbitIcon } from "./OrbitIcon";
 import AnalogClock from "./AnalogClock";
+import { useToast } from "../hooks/useToast";
 
 interface TimelineProps {
   cities: City[];
@@ -38,7 +38,6 @@ const RemoveIcon = () => (
   </svg>
 );
 
-// --- Task 1: Fix Health Calculation ---
 function getLocalHourAtUTC(utcHour: number, tz: string, date: Date): number {
   try {
     const d = new Date(date);
@@ -64,21 +63,24 @@ function getHealth(sliderPct: number, cities: City[], date: Date) {
   const a = available.length;
   const t = cities.length;
   const r = t === 0 ? 0 : a / t;
-  if (r === 1)   return { label: `✓ Perfect — all ${t} available`,   color: '#16a34a', bg: 'rgba(22,163,74,0.1)'   };
-  if (r >= 0.75) return { label: `Good — ${a}/${t} available`,        color: '#ca8a04', bg: 'rgba(202,138,4,0.1)'  };
-  if (r >= 0.5)  return { label: `Fair — ${a}/${t} available`,        color: '#d97706', bg: 'rgba(217,119,6,0.1)'  };
-  return               { label: `Poor — only ${a}/${t} in hours`,    color: '#dc2626', bg: 'rgba(220,38,38,0.1)'  };
+  if (r === 1)   return { label: `✓ Perfect — all ${t} available`,   color: '#16a34a', bg: 'rgba(22,163,74,0.1)', ratio: 1   };
+  if (r >= 0.75) return { label: `Good — ${a}/${t} available`,        color: '#ca8a04', bg: 'rgba(202,138,4,0.1)', ratio: r  };
+  if (r >= 0.5)  return { label: `Fair — ${a}/${t} available`,        color: '#d97706', bg: 'rgba(217,119,6,0.1)', ratio: r  };
+  return               { label: `Poor — only ${a}/${t} in hours`,    color: '#dc2626', bg: 'rgba(220,38,38,0.1)', ratio: r  };
 }
 
-const TimelineBar = ({ city, isFirstRow, selectedDate }: { city: City; isFirstRow: boolean; selectedDate: Date }) => {
-  // DST check for row warning
+const TimelineBar = memo(({ city, isFirstRow, selectedDate }: { city: City; isFirstRow: boolean; selectedDate: Date }) => {
   const today = new Date();
   const offsetToday = getOffsetForDate(city.timezone, today);
   const offsetSelected = getOffsetForDate(city.timezone, selectedDate);
   const dstChanged = offsetToday !== offsetSelected;
 
+  // Sunlight Glow logic
+  const nowHour = new Date().toLocaleTimeString("en-US", { hour: "numeric", hour12: false, timeZone: city.timezone });
+  const h = parseInt(nowHour, 10);
+  const isCurrentlyWorking = h >= 9 && h < 17;
+
   const renderSegment = (start: number, end: number, bgColor: string, borderColor?: string, boxShadow?: string) => {
-    // We need to calculate shift based on selectedDate
     const utcDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: "UTC" }));
     const tzDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: city.timezone }));
     const shift = (tzDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60);
@@ -93,15 +95,18 @@ const TimelineBar = ({ city, isFirstRow, selectedDate }: { city: City; isFirstRo
       const width = right - left;
       if (width <= 0) return null;
 
+      const isWorkingSegment = start === 9 && end === 17;
+
       return (
         <div
           key={`${day}-${start}`}
-          className={`absolute top-0 bottom-0 timeline-segment`}
+          className={`absolute top-0 bottom-0 timeline-segment ${isWorkingSegment && isCurrentlyWorking ? 'timeline-segment-working' : ''}`}
           style={{ 
             left: `${left}%`, 
             width: `${width}%`,
             background: bgColor,
             boxShadow: boxShadow,
+            ...(isWorkingSegment && isCurrentlyWorking ? {} : {}), // Remove inline animation
             ...(borderColor ? { 
               borderTop: `1px solid ${borderColor}`, 
               borderBottom: `1px solid ${borderColor}`, 
@@ -153,7 +158,7 @@ const TimelineBar = ({ city, isFirstRow, selectedDate }: { city: City; isFirstRo
       )}
     </div>
   );
-};
+});
 
 const Timeline = ({ 
   cities, 
@@ -172,9 +177,12 @@ const Timeline = ({
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [isVisible, setIsVisible] = useState(false);
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const calendarMenuRef = useRef<HTMLDivElement>(null);
+  const lastHapticRef = useRef<string>("");
+  const { showToast } = useToast();
 
   useEffect(() => {
     setIsVisible(true);
@@ -190,7 +198,7 @@ const Timeline = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
@@ -209,11 +217,11 @@ const Timeline = ({
     } else {
       setHoverPercent(null);
     }
-  };
+  }, []);
 
-  const handleMouseLeave = () => setHoverPercent(null);
+  const handleMouseLeave = useCallback(() => setHoverPercent(null), []);
 
-  const handleRemove = (id: string) => {
+  const handleRemove = useCallback((id: string) => {
     setRemovingIds((prev) => new Set(prev).add(id));
     setTimeout(() => {
       onRemoveCity(id);
@@ -223,7 +231,7 @@ const Timeline = ({
         return next;
       });
     }, 200);
-  };
+  }, [onRemoveCity]);
 
   const blocks = useMemo(() => {
     if (cities.length === 0) return [];
@@ -258,15 +266,15 @@ const Timeline = ({
     return new Date(d.getTime() + totalMinutes * 60 * 1000);
   }, [hoverPercent, selectedDate]);
   
-  const getMeetingDateStr = (timezone: string) => {
+  const getMeetingDateStr = useCallback((timezone: string) => {
     if (meetingPercent === null) return "";
     const d = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
     const totalMinutes = Math.round((meetingPercent / 100) * 24 * 60);
     const targetDate = new Date(d.getTime() + totalMinutes * 60 * 1000);
     return formatTime(targetDate, timezone, timeFormat);
-  };
+  }, [meetingPercent, selectedDate, timeFormat]);
 
-  const getDayIndicator = (timezone: string) => {
+  const getDayIndicator = useCallback((timezone: string) => {
     const targetDate = meetingPercent !== null 
       ? new Date(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0).getTime() + Math.round((meetingPercent / 100) * 24 * 60) * 60000)
       : (isFuture ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 12, 0, 0, 0) : now);
@@ -283,12 +291,14 @@ const Timeline = ({
     if (lInt > uInt) return { label: "+1", title: "Tomorrow" };
     if (lInt < uInt) return { label: "-1", title: "Yesterday" };
     return null;
-  };
+  }, [meetingPercent, selectedDate, isFuture, now]);
 
-  const markers = [0, 3, 6, 9, 12, 15, 18, 21];
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+  const markers = isMobile ? [0, 6, 12, 18, 24] : [0, 3, 6, 9, 12, 15, 18, 21];
+
   const [copied, setCopied] = useState(false);
 
-  const handleCopyTimes = (e: React.MouseEvent) => {
+  const handleCopyTimes = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     const baseHourStr = formatTime(hoverDate, "UTC", timeFormat);
     const title = `${baseHourStr} UTC\n`;
@@ -303,46 +313,31 @@ const Timeline = ({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
-  };
+  }, [hoverDate, timeFormat, cities, selectedDate, hoverPercent, currentSliderPercent]);
 
-  const buildCalendarUrls = () => {
+  const buildCalendarUrls = useCallback(() => {
     const utcH = Math.round((currentSliderPercent / 100) * 23);
     const d = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
     d.setUTCHours(utcH, 0, 0, 0);
     const endD = new Date(d.getTime() + 60 * 60 * 1000);
-    
     const fmt = (date: Date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     const start = fmt(d);
     const end = fmt(endD);
-    
     const cityTimes = cities.map(c => `${c.name}: ${formatTime(d, c.timezone, "12h")}`).join('\n');
     const encodedDetails = encodeURIComponent(cityTimes);
     const encodedTitle = encodeURIComponent("Meeting — Orbit");
-    
     return {
       google: `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodedTitle}&dates=${start}/${end}&details=${encodedDetails}&location=Remote+/+Online`,
       outlook: `https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodedTitle}&startdt=${d.toISOString()}&enddt=${endD.toISOString()}&body=${encodedDetails}&location=Remote+/+Online`,
       ics: d
     };
-  };
+  }, [currentSliderPercent, selectedDate, cities]);
 
-  const handleDownloadICS = (d: Date) => {
+  const handleDownloadICS = useCallback((d: Date) => {
     const startUTC = d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     const endUTC = new Date(d.getTime() + 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     const cityTimes = cities.map(c => `${c.name}: ${formatTime(d, c.timezone, "12h")}`).join('\\n');
-    
-    const ics = `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//Orbit//Timezone Planner//EN
-BEGIN:VEVENT
-DTSTART:${startUTC}
-DTEND:${endUTC}
-SUMMARY:Meeting — Orbit
-DESCRIPTION:${cityTimes}
-LOCATION:Remote / Online
-END:VEVENT
-END:VCALENDAR`;
-    
+    const ics = `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Orbit//Timezone Planner//EN\nBEGIN:VEVENT\nDTSTART:${startUTC}\nDTEND:${endUTC}\nSUMMARY:Meeting — Orbit\nDESCRIPTION:${cityTimes}\nLOCATION:Remote / Online\nEND:VEVENT\nEND:VCALENDAR`;
     const blob = new Blob([ics], { type: 'text/calendar' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -350,11 +345,29 @@ END:VCALENDAR`;
     a.download = 'orbit-meeting.ics';
     a.click();
     URL.revokeObjectURL(url);
-  };
+    showToast({ message: "Calendar file downloaded", type: "calendar" });
+  }, [cities, showToast]);
 
   const healthScore = useMemo(() => {
     if (cities.length === 0) return null;
-    return getHealth(currentSliderPercent, cities, selectedDate);
+    const score = getHealth(currentSliderPercent, cities, selectedDate);
+    
+    // Haptic Feedback (Task 2)
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        if (score.ratio === 1 && lastHapticRef.current !== "perfect") {
+          navigator.vibrate([50, 20, 50]);
+          lastHapticRef.current = "perfect";
+        } else if (score.ratio < 0.25 && lastHapticRef.current !== "poor") {
+          navigator.vibrate(30);
+          lastHapticRef.current = "poor";
+        } else if (score.ratio > 0.25 && score.ratio < 1) {
+          lastHapticRef.current = "";
+        }
+      } catch (e) { /* ignore */ }
+    }
+    
+    return score;
   }, [currentSliderPercent, cities, selectedDate]);
 
   return (
@@ -389,9 +402,35 @@ END:VCALENDAR`;
           from { opacity: 0.5; }
           to { opacity: 1; }
         }
+        @keyframes rollDigit {
+          0% { transform: translateY(0); opacity: 1; }
+          40% { transform: translateY(-4px); opacity: 0.3; }
+          60% { transform: translateY(4px); opacity: 0.3; }
+          100% { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes workingGlow {
+          0%, 100% { 
+            box-shadow: inset 0 0 0 rgba(22,163,74,0); 
+            background: var(--timeline-working);
+          }
+          50% { 
+            box-shadow: inset 0 2px 8px rgba(22,163,74,0.08);
+            background: rgba(240,253,244,0.8);
+          }
+        }
+        [data-theme="dark"] .timeline-segment {
+          animation-name: workingGlowDark;
+        }
+        @keyframes workingGlowDark {
+          0%, 100% { background: var(--timeline-working); }
+          50% { background: rgba(22,163,74,0.12); }
+        }
         
         .pulse-time {
           animation: pulseTime 1s infinite;
+        }
+        .roll-animation {
+          animation: rollDigit 0.15s ease forwards;
         }
 
         .meeting-slider::-webkit-slider-thumb {
@@ -404,6 +443,12 @@ END:VCALENDAR`;
           border: 2px solid var(--bg-page);
           box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
           cursor: pointer;
+        }
+        @media (max-width: 768px) {
+          .meeting-slider::-webkit-slider-thumb {
+            width: 24px;
+            height: 24px;
+          }
         }
         .meeting-slider::-moz-range-thumb {
           width: 20px;
@@ -452,20 +497,16 @@ END:VCALENDAR`;
           <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-10 hidden md:block">
             {blocks.map((block, idx) => {
               return [-1, 0, 1].map((day) => {
-                // Calculate base shift for blocks too
                 const utcDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: "UTC" }));
                 const tzDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: cities[0]?.timezone || "UTC" }));
                 const baseShift = (tzDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60);
-
                 const localStart = block.start - baseShift + day * 24;
                 const localEnd = block.end - baseShift + day * 24;
                 if (localEnd <= 0 || localStart >= 24) return null;
-
                 const left = Math.max(0, localStart) / 24 * 100;
                 const right = Math.min(24, localEnd) / 24 * 100;
                 const width = right - left;
                 if (width <= 0) return null;
-
                 return (
                   <div
                     key={`${idx}-${day}`}
@@ -483,7 +524,7 @@ END:VCALENDAR`;
             })}
           </div>
 
-          {/* Now Indicator & Zenith Needle (Task 2: Fixed Gap) */}
+          {/* Now Indicator & Zenith Needle */}
           <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-20">
             <div
               className="absolute top-0 w-[1px] bg-[var(--text-primary)] transition-all duration-[50ms] ease-linear"
@@ -497,72 +538,14 @@ END:VCALENDAR`;
                 </div>
               )}
               
-              {/* Task 2: Fixed Zenith Needle & Label */}
               <div 
                 className="absolute left-1/2 -translate-x-1/2 bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[6px] px-[8px] py-[2px] text-[10px] font-bold font-sans text-[var(--text-primary)] whitespace-nowrap"
                 style={{ top: '100%', boxShadow: 'var(--shadow-sm)' }}
               >
-                {/* Upward Caret */}
                 <div style={{ width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '5px solid var(--border-default)', position: 'absolute', top: -5, left: '50%', transform: 'translateX(-50%)' }} />
                 {getMeetingDateStr(Intl.DateTimeFormat().resolvedOptions().timeZone) || formatTime(isFuture ? new Date(selectedDate.setHours(12,0,0,0)) : now, Intl.DateTimeFormat().resolvedOptions().timeZone, timeFormat)}
               </div>
             </div>
-          </div>
-
-          {/* Hover Tooltip & Line */}
-          <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-30 hidden md:block overflow-visible">
-            {hoverPercent !== null && meetingPercent === null && (
-              <>
-                <div
-                  className="absolute top-0 bottom-0 w-px border-l border-dashed border-[var(--text-muted)]"
-                  style={{ left: `${hoverPercent}%` }}
-                />
-                <div
-                  className="absolute z-40 bg-[var(--bg-elevated)] shadow-lg rounded-[10px] min-w-[180px] pointer-events-auto border border-[var(--border-default)] flex flex-col"
-                  style={{
-                    left: `calc(${hoverPercent}% + 16px)`,
-                    top: hoverPos.top - 20 > 0 ? hoverPos.top - 20 : 20,
-                    transform: hoverPercent > 70 ? "translateX(-100%)" : "none",
-                    marginLeft: hoverPercent > 70 ? "-32px" : "0",
-                    transition: "left 80ms ease, top 80ms ease",
-                    animation: hoverPercent > 70 ? 'popInRight 100ms ease forwards' : 'popInLeft 100ms ease forwards'
-                  }}
-                  onMouseMove={(e) => e.stopPropagation()}
-                >
-                  <div className="px-3.5 pt-3 pb-2">
-                    <div className="text-[12px] font-semibold text-[var(--text-secondary)] mb-2 font-sans flex justify-between items-center">
-                      <span className="time-display">UTC · {formatTime(hoverDate, "UTC", timeFormat)}</span>
-                    </div>
-                    <div className="flex flex-col gap-[6px]">
-                      {cities.map((c) => {
-                        const d = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
-                        const tm = Math.round((hoverPercent / 100) * 24 * 60);
-                        const td = new Date(d.getTime() + tm * 60 * 1000);
-                        return (
-                          <div key={c.id} className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm">{c.emoji}</span>
-                              <span className="text-[12px] font-display font-semibold text-[var(--text-primary)]">
-                                {c.name}
-                              </span>
-                            </div>
-                            <span className="text-[13px] font-semibold text-[var(--text-primary)] font-sans time-display">
-                              {formatTime(td, c.timezone, "12h").replace(/ (AM|PM)/i, (m) => m.toLowerCase())}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleCopyTimes}
-                    className="w-full py-[10px] text-[11px] font-sans font-semibold text-[#898989] border-t border-[var(--border-default)] hover:text-[#242424] hover:bg-[var(--bg-surface)] transition-colors rounded-b-[10px]"
-                  >
-                    {copied ? "✓ Copied" : "Copy all times"}
-                  </button>
-                </div>
-              </>
-            )}
           </div>
 
           {/* Rows */}
@@ -570,7 +553,8 @@ END:VCALENDAR`;
             {cities.map((city, idx) => {
               const activeDST = isDSTActive(city.timezone, selectedDate);
               const dayInd = getDayIndicator(city.timezone);
-              
+              const meetingTimeStr = getMeetingDateStr(city.timezone) || formatTime(isFuture ? new Date(selectedDate.setHours(12,0,0,0)) : now, city.timezone, timeFormat);
+
               return (
                 <div
                   key={city.id}
@@ -584,52 +568,48 @@ END:VCALENDAR`;
                     opacity: draggedIdx === idx ? 0.4 : (isVisible ? 1 : 0),
                   }}
                   draggable="true"
-                  onDragStart={(e) => {
-                    setDraggedIdx(idx);
-                    e.dataTransfer.effectAllowed = "move";
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOverIdx(idx);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (draggedIdx !== null && draggedIdx !== idx) {
-                      onReorderCities(draggedIdx, idx);
-                    }
-                    setDraggedIdx(null);
-                    setDragOverIdx(null);
-                  }}
-                  onDragEnd={() => {
-                    setDraggedIdx(null);
-                    setDragOverIdx(null);
-                  }}
+                  onDragStart={(e) => { setDraggedIdx(idx); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragOver={(e) => { e.preventDefault(); setDragOverIdx(idx); }}
+                  onDrop={(e) => { e.preventDefault(); if (draggedIdx !== null && draggedIdx !== idx) onReorderCities(draggedIdx, idx); setDraggedIdx(null); setDragOverIdx(null); }}
+                  onDragEnd={() => { setDraggedIdx(null); setDragOverIdx(null); }}
                 >
-                  <div className="w-[200px] min-w-[200px] max-w-[200px] shrink-0 h-auto md:h-full pr-[16px] relative flex flex-col justify-center gap-[2px] bg-[var(--bg-surface)] py-2 md:py-0 px-3 md:px-0 rounded-md md:rounded-none md:bg-transparent">
+                  {/* Left Sidebar - Mobile Responsive Stacking */}
+                  <div className="w-full md:w-[200px] md:min-w-[200px] md:max-w-[200px] shrink-0 h-auto md:h-full pr-[16px] relative flex flex-col justify-center gap-[2px] bg-[var(--bg-surface)] md:bg-transparent py-2 md:py-0 px-3 md:px-0 rounded-md md:rounded-none">
                     <div className="hidden md:block absolute left-0 opacity-0 group-hover:opacity-100 cursor-grab text-[var(--text-muted)] p-2 -ml-5">
                       <DragHandleIcon />
                     </div>
 
-                    <div className="flex items-center gap-1.5 md:pl-2">
-                      <span className="w-[24px] text-[16px] leading-none text-center flex-shrink-0">{city.emoji}</span>
-                      <span className="text-[14px] font-display font-semibold text-[var(--text-primary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap">
-                        {city.name}
+                    <div className="flex items-center justify-between md:justify-start gap-1.5 md:pl-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-[24px] text-[16px] leading-none text-center flex-shrink-0">{city.emoji}</span>
+                        <span className="text-[13px] md:text-[14px] font-display font-semibold text-[var(--text-primary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap">
+                          {city.name}
+                        </span>
+                      </div>
+                      
+                      {/* Mobile-only time display next to name */}
+                      <span 
+                        key={`${meetingTimeStr}-${isDragging}`}
+                        className={`md:hidden text-[18px] font-sans font-bold text-[var(--text-primary)] leading-none tracking-tight tabular-nums ${isDragging ? 'roll-animation' : ''}`}
+                      >
+                        {meetingTimeStr}
                       </span>
                     </div>
                     
-                    <div className="pl-[30px] md:pl-[38px] text-[11px] font-sans text-[var(--text-secondary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap mt-0.5">
+                    <div className="hidden md:block pl-[38px] text-[11px] font-sans text-[var(--text-secondary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap mt-0.5">
                       {city.country}
                     </div>
 
-                    <div className="pl-[30px] md:pl-[38px] mt-1.5 mb-1.5">
+                    <div className="hidden md:block pl-[38px] mt-1.5 mb-1.5">
                       <AnalogClock timezone={city.timezone} size={22} selectedDate={selectedDate} />
                     </div>
 
-                    <div className="pl-[30px] md:pl-[38px] flex items-center gap-2">
+                    <div className="hidden md:flex pl-[38px] items-center gap-2">
                       <span 
-                        className={`inline-block text-[20px] font-sans font-bold text-[var(--text-primary)] leading-none tracking-tight time-display ${meetingPercent === null && !isFuture ? "pulse-time" : ""}`}
+                        key={`${meetingTimeStr}-${isDragging}`}
+                        className={`inline-block text-[20px] font-sans font-bold text-[var(--text-primary)] leading-none tracking-tight tabular-nums ${isDragging ? 'roll-animation' : ''} ${meetingPercent === null && !isFuture ? "pulse-time" : ""}`}
                       >
-                        {getMeetingDateStr(city.timezone) || formatTime(isFuture ? new Date(selectedDate.setHours(12,0,0,0)) : now, city.timezone, timeFormat)}
+                        {meetingTimeStr}
                       </span>
                     </div>
 
@@ -677,9 +657,7 @@ END:VCALENDAR`;
       {cities.length > 0 && (
         <div className="mt-[24px] flex flex-col items-center w-full md:pl-[200px] relative z-20">
            <div className="flex items-center gap-3 mb-3">
-             <div className="text-[12px] font-sans text-[var(--text-secondary)]">
-               Drag to find the best meeting time
-             </div>
+             <div className="text-[12px] font-sans text-[var(--text-secondary)]">Drag to find best time</div>
              {healthScore && (
                <div 
                  className="px-[14px] py-[10px] rounded-full text-[12px] font-sans font-semibold shadow-sm"
@@ -690,18 +668,22 @@ END:VCALENDAR`;
              )}
            </div>
            
-           <div className="relative w-full h-[20px] flex items-center group">
-             <div className="absolute left-0 right-0 h-[4px] bg-[var(--border-strong)] rounded-full overflow-hidden">
+           <div className="relative w-full h-[20px] md:h-[20px] flex items-center group">
+             <div className="absolute left-0 right-0 h-[6px] md:h-[4px] bg-[var(--border-strong)] rounded-full overflow-hidden">
                 <div className="h-full bg-[var(--text-primary)] transition-all duration-75" style={{ width: `${currentSliderPercent}%` }} />
              </div>
              <input 
                type="range" min="0" max="100" step="0.1" 
                value={currentSliderPercent}
+               onMouseDown={() => setIsDragging(true)}
+               onMouseUp={() => setIsDragging(false)}
+               onTouchStart={() => setIsDragging(true)}
+               onTouchEnd={() => setIsDragging(false)}
                onChange={(e) => setMeetingPercent(parseFloat(e.target.value))}
                className="meeting-slider absolute inset-0 w-full h-full opacity-0 z-30 cursor-pointer"
              />
              <div 
-               className="absolute w-[20px] h-[20px] rounded-full bg-[var(--text-primary)] border-[2px] border-[var(--bg-page)] shadow-md pointer-events-none transition-all duration-75 group-hover:scale-110 z-20"
+               className="absolute w-[24px] h-[24px] md:w-[20px] md:h-[20px] rounded-full bg-[var(--text-primary)] border-[2px] border-[var(--bg-page)] shadow-md pointer-events-none transition-all duration-75 group-hover:scale-110 z-20"
                style={{ left: `calc(${currentSliderPercent}% - 10px)` }}
              />
            </div>
@@ -739,14 +721,14 @@ END:VCALENDAR`;
                         <a 
                           href={buildCalendarUrls().google} target="_blank" rel="noopener noreferrer"
                           className="block w-full text-left px-3 py-2 text-[12px] font-sans hover:bg-[var(--bg-surface)] rounded-md transition-colors"
-                          onClick={() => setShowCalendarMenu(false)}
+                          onClick={() => { setShowCalendarMenu(false); showToast({ message: "Redirecting to Google Calendar", type: "calendar" }); }}
                         >
                           Google Calendar
                         </a>
                         <a 
                           href={buildCalendarUrls().outlook} target="_blank" rel="noopener noreferrer"
                           className="block w-full text-left px-3 py-2 text-[12px] font-sans hover:bg-[var(--bg-surface)] rounded-md transition-colors"
-                          onClick={() => setShowCalendarMenu(false)}
+                          onClick={() => { setShowCalendarMenu(false); showToast({ message: "Redirecting to Outlook Calendar", type: "calendar" }); }}
                         >
                           Outlook Calendar
                         </a>

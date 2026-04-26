@@ -11,6 +11,7 @@ const inter = Inter({
 import { ThemeProvider } from "../components/ThemeProvider";
 import Starfield from "../components/Starfield";
 import SolarSystem from "../components/SolarSystem";
+import { ToastProvider } from "../components/ToastProvider";
 
 export const metadata: Metadata = {
   title: "Orbit — World Timezone Planner",
@@ -42,10 +43,12 @@ export default function RootLayout({
         <Starfield />
         <SolarSystem />
         <ThemeProvider>
-          {/* Content wrapper transparent so backgrounds show through */}
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            {children}
-          </div>
+          <ToastProvider>
+            {/* Content wrapper transparent so backgrounds show through */}
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              {children}
+            </div>
+          </ToastProvider>
         </ThemeProvider>
       </body>
     </html>

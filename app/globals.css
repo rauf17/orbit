@@ -75,17 +75,7 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
   transition: background-color 200ms ease, color 200ms ease;
-}
-
-/* Page sections transparent so starfield shows through */
-.page-bg-transparent {
-  background: transparent !important;
-}
-
-.city-search-dropdown {
-  isolation: isolate;
-  z-index: 9999 !important;
-  position: absolute !important;
+  overflow-x: hidden;
 }
 
 .time-display {
@@ -98,66 +88,49 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #e5e5e5;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #c0c0c0;
-  border-radius: 4px;
-}
-
-[data-theme="dark"] ::-webkit-scrollbar-track {
-  background: #1c1c20;
-}
-
-[data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: #3a3a4a;
-}
-
-.now-indicator-line {
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
-}
-.now-indicator-dot {
-  box-shadow: none;
-}
-[data-theme="dark"] .now-indicator-line {
-  box-shadow: 0 0 8px rgba(255,255,255,0.3), 0 0 16px rgba(255,255,255,0.1);
-}
-[data-theme="dark"] .now-indicator-dot {
-  box-shadow: 0 0 6px rgba(255,255,255,0.8);
-}
-
 @keyframes headingShimmer {
   0%   { background-position: 100% 50%; }
   50%  { background-position:   0% 50%; }
   100% { background-position: 100% 50%; }
 }
 
-@keyframes nowRipple {
-  0%   { transform: scale(1); opacity: 0.6; }
-  100% { transform: scale(2.5); opacity: 0; }
+@keyframes rollDigit {
+  0% { transform: translateY(0); opacity: 1; }
+  40% { transform: translateY(-4px); opacity: 0.3; }
+  60% { transform: translateY(4px); opacity: 0.3; }
+  100% { transform: translateY(0); opacity: 1; }
 }
 
-/* Note textarea animation */
-@keyframes noteReveal {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+@keyframes workingGlow {
+  0%, 100% { 
+    box-shadow: inset 0 0 0 rgba(22,163,74,0); 
+    background: var(--timeline-working);
+  }
+  50% { 
+    box-shadow: inset 0 2px 8px rgba(22,163,74,0.08);
+    background: rgba(240,253,244,0.8);
+  }
 }
 
-/* Cursor blink */
-@keyframes cursorBlink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
+.timeline-segment-working {
+  animation: workingGlow 3s ease-in-out infinite;
 }
-.cursor-blink {
-  animation: cursorBlink 500ms step-end infinite;
+
+[data-theme="dark"] .timeline-segment-working {
+  animation: workingGlowDark 3s ease-in-out infinite;
+}
+
+@keyframes workingGlowDark {
+  0%, 100% { background: var(--timeline-working); }
+  50% { background: rgba(22,163,74,0.12); }
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
