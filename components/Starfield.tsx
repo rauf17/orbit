@@ -59,6 +59,7 @@ export default function Starfield() {
       `}</style>
       <div
         aria-hidden="true"
+        className="no-theme-transition"
         style={{
           position: 'fixed',
           inset: 0,

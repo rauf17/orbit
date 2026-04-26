@@ -11,6 +11,7 @@ interface ToastProps {
 export default function Toast({ message, submessage, type = 'success', onClose }: ToastProps) {
   const [visible, setVisible] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [isDark, setIsDark] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const dismiss = () => {
@@ -19,12 +20,25 @@ export default function Toast({ message, submessage, type = 'success', onClose }
   };
 
   useEffect(() => {
+    const checkTheme = () => setIsDark(document.documentElement.getAttribute('data-theme') === 'dark');
+    checkTheme();
+    const obs = new MutationObserver(checkTheme);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     setTimeout(() => setVisible(true), 10);
     timerRef.current = setTimeout(dismiss, 2500);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
+      obs.disconnect();
     };
   }, []);
+
+  const darkStyle = isDark ? {
+    background: 'rgba(28,28,32,0.9)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    color: '#f0f0f0',
+  } : {};
 
   return (
     <div style={{
@@ -35,7 +49,8 @@ export default function Toast({ message, submessage, type = 'success', onClose }
       transform: visible && !leaving ? 'translateY(0)' : 'translateY(16px)',
       opacity: visible && !leaving ? 1 : 0,
       transition: 'transform 300ms cubic-bezier(0.16,1,0.3,1), opacity 300ms ease',
-      minWidth: 220, overflow: 'hidden'
+      minWidth: 220, overflow: 'hidden',
+      ...darkStyle,
     }}>
       <button onClick={dismiss} style={{
         position: 'absolute', top: 8, right: 8,
@@ -55,10 +70,7 @@ export default function Toast({ message, submessage, type = 'success', onClose }
         animation: 'toastProgress 2.5s linear forwards'
       }} />
       <style>{`
-        @keyframes toastProgress {
-          from { width: 100%; }
-          to { width: 0%; }
-        }
+        @keyframes toastProgress { from { width: 100%; } to { width: 0%; } }
       `}</style>
     </div>
   );

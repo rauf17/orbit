@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useTheme } from "./ThemeProvider";
+import { OrbitIcon } from "./OrbitIcon";
 
 const GithubIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -26,9 +28,6 @@ const HelpIcon = () => (
   </svg>
 );
 
-import { useTheme } from "./ThemeProvider";
-import { OrbitIcon } from "./OrbitIcon";
-
 const SunIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="5"></circle>
@@ -49,15 +48,14 @@ const MoonIcon = () => (
   </svg>
 );
 
-export default function Navbar({
-  timeFormat,
-  toggleTimeFormat,
-  onShare,
-}: {
+interface NavbarProps {
   timeFormat: "12h" | "24h";
   toggleTimeFormat: () => void;
   onShare: () => void;
-}) {
+  isShareAnimating?: boolean;
+}
+
+export default function Navbar({ timeFormat, toggleTimeFormat, onShare, isShareAnimating }: NavbarProps) {
   const [scrolled, setScrolled] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -85,7 +83,7 @@ export default function Navbar({
   return (
     <>
       <nav
-        className={`sticky top-0 z-40 h-[56px] w-full border-b border-[var(--border-default)] transition-colors duration-300 flex items-center justify-center`}
+        className={`sticky top-0 z-40 h-[56px] w-full border-b border-[var(--border-default)] transition-all duration-300 flex items-center justify-center ${scrolled ? 'shadow-sm' : ''}`}
         style={{
           backgroundColor: theme === 'dark' ? 'rgba(13,13,15,0.9)' : 'rgba(255,255,255,0.9)',
           backdropFilter: 'blur(12px)',
@@ -151,6 +149,10 @@ export default function Navbar({
 
             <button
               onClick={onShare}
+              style={{ 
+                transform: isShareAnimating ? 'scale(0.95) rotate(15deg)' : 'scale(1) rotate(0deg)',
+                transition: 'transform 150ms cubic-bezier(0.16, 1, 0.3, 1)' 
+              }}
               className="flex items-center gap-[6px] bg-[var(--bg-page)] shadow-sm border border-[var(--border-default)] rounded-[8px] px-[14px] py-[8px] h-[34px] text-[var(--text-primary)] hover:shadow-md hover:-translate-y-[1px] transition-all duration-150 active:translate-y-0 active:shadow-sm"
             >
               <LinkIcon />

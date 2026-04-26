@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import SplashScreen from "../components/SplashScreen";
 import Navbar from "../components/Navbar";
@@ -35,14 +35,17 @@ function useTypewriter(active: boolean) {
 }
 
 export default function Home() {
-  const [appReady, setAppReady]           = useState(false);
-  const [toastOpen, setToastOpen]         = useState(false);
+  const [appReady, setAppReady]             = useState(false);
+  const [toastOpen, setToastOpen]           = useState(false);
   const [meetingPercent, setMeetingPercent] = useState<number | null>(null);
-  const [sharedTime, setSharedTime]       = useState<string | null>(null);
-  const [sharedNote, setSharedNote]       = useState<string | null>(null);
+  const [sharedTime, setSharedTime]         = useState<string | null>(null);
+  const [sharedNote, setSharedNote]         = useState<string | null>(null);
   const [showNoteBanner, setShowNoteBanner] = useState(true);
-  const [goldenBadge, setGoldenBadge]     = useState<string | null>(null);
-  const [theme, setTheme]                 = useState<"light" | "dark">("light");
+  const [goldenBadge, setGoldenBadge]       = useState<string | null>(null);
+  const [theme, setTheme]                   = useState<"light" | "dark">("light");
+  const [shareAnimating, setShareAnimating] = useState(false);
+  const [bestAnimating, setBestAnimating]   = useState(false);
+  const shareButtonRef = useRef<HTMLButtonElement>(null);
 
   // Mouse-tracking gradient CSS vars
   useEffect(() => {
@@ -106,6 +109,9 @@ export default function Home() {
 
   const handleShare = useCallback(() => {
     if (typeof window === "undefined") return;
+    // Button press animation
+    setShareAnimating(true);
+    setTimeout(() => setShareAnimating(false), 300);
     const params = new URLSearchParams();
     params.set("cities", selectedCities.map((c) => c.id).join(","));
     if (meetingPercent !== null) {
@@ -130,14 +136,23 @@ export default function Home() {
       }
       if (awakeCount > maxAwake) { maxAwake = awakeCount; bestHour = i; if (awakeCount === selectedCities.length) perfect = true; }
     }
+    
     const targetPercent = (bestHour / 24) * 100;
-    const startPercent = meetingPercent !== null ? meetingPercent : ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * 100;
+    const nowPercent = ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * 100;
+    const start = meetingPercent ?? nowPercent;
+    const duration = 600;
     const startTime = performance.now();
-    const animate = (t: number) => {
-      const progress = Math.min((t - startTime) / 600, 1);
-      const ease = progress < 0.5 ? 4 * progress ** 3 : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-      setMeetingPercent(startPercent + (targetPercent - startPercent) * ease);
-      if (progress < 1) { requestAnimationFrame(animate); } else {
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+    
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = easeOutCubic(progress);
+      setMeetingPercent(start + (targetPercent - start) * eased);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
         const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), bestHour, 0, 0, 0);
         const ts = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: timeFormat === "12h" }).format(d);
         setGoldenBadge(perfect ? `✓ Perfect overlap at ${ts} — all cities available` : `✓ ${maxAwake}/${selectedCities.length} cities available at ${ts}`);
@@ -216,7 +231,12 @@ export default function Home() {
           <div className="absolute rounded-full" style={{ width:300, height:300, backgroundImage:"radial-gradient(circle, rgba(34,211,238,0.03), transparent)", filter:"blur(60px)", bottom:"10%", right:"10%", animation:"drift2 25s infinite alternate linear" }} />
         </div>
 
-        <Navbar timeFormat={timeFormat} toggleTimeFormat={toggleTimeFormat} onShare={handleShare} />
+        <Navbar 
+          timeFormat={timeFormat} 
+          toggleTimeFormat={toggleTimeFormat} 
+          onShare={handleShare} 
+          isShareAnimating={shareAnimating}
+        />
 
         {/* Shared-time banner */}
         {sharedTime && (
@@ -289,10 +309,15 @@ export default function Home() {
 
               <div className="relative">
                 <button
-                  onClick={handleGoldenWindow}
+                  onClick={() => {
+                    setBestAnimating(true);
+                    setTimeout(() => setBestAnimating(false), 600);
+                    handleGoldenWindow();
+                  }}
+                  style={{ transform: bestAnimating ? 'scale(1.05)' : 'scale(1)', transition: 'transform 300ms ease' }}
                   className="flex items-center gap-[6px] bg-[var(--bg-page)] shadow-sm border border-[var(--border-default)] rounded-[8px] px-[16px] py-[10px] text-[14px] font-sans font-semibold hover:shadow-md hover:-translate-y-[2px] active:translate-y-0 active:scale-[0.98] transition-all duration-150"
                 >
-                  <span className="text-[var(--text-primary)] flex items-center justify-center"><OrbitIcon size={14} speed={2} /></span> Best Time
+                  <span className="text-[var(--text-primary)] flex items-center justify-center"><OrbitIcon size={14} speed={bestAnimating ? 0.5 : 2} /></span> Best Time
                 </button>
                 {goldenBadge && (
                   <div className="absolute top-full left-0 mt-[8px] whitespace-nowrap text-[12px] font-sans text-[#16a34a] bg-[rgba(22,163,74,0.1)] px-[10px] py-[4px] rounded-[6px]">
@@ -352,12 +377,24 @@ export default function Home() {
               >
                 <h2 className="text-[14px] font-display font-semibold relative inline-block">
                   Your Timeline
-                  <div className="absolute -bottom-[13px] left-0 h-[2px] bg-[var(--text-primary)]"
+                  <div className="absolute -bottom-[13px] left-0 h-[1px] bg-[var(--border-strong)]"
                     style={{ animation: appReady ? "expandLine 400ms ease 1400ms forwards" : "none", width: 0 }} />
                 </h2>
-                <div className="text-[12px] font-sans text-[var(--text-secondary)]">
-                  {new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(now)}{" "}
-                  · {formatTime(now, "UTC", timeFormat)} UTC
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <div className="text-[12px] font-sans text-[var(--text-secondary)] time-display">
+                    {new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(now)}{" "}
+                    · {formatTime(now, "UTC", timeFormat)} UTC
+                  </div>
+                  {meetingPercent !== null && (
+                    <button
+                      onClick={() => setMeetingPercent(null)}
+                      style={{ fontSize: 11, color: '#898989', background: 'none', border: 'none', cursor: 'pointer', transition: 'color 150ms ease' }}
+                      onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#898989')}
+                    >
+                      ↺ Now
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -395,6 +432,42 @@ export default function Home() {
             </section>
           )}
         </main>
+
+        {/* ── Footer ────────────────────────────────────────────────────────── */}
+        <footer style={{
+          marginTop: 60, paddingTop: 24, paddingBottom: 40,
+          borderTop: '1px solid var(--border-default)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexWrap: 'wrap', gap: 12,
+          maxWidth: 1100, margin: '60px auto 0', padding: '24px 24px 40px',
+        }}>
+          {/* Left */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <OrbitIcon size={14} speed={4} />
+              <span style={{ fontSize: 13, fontFamily: 'var(--font-display, Cal Sans, sans-serif)', fontWeight: 600, color: 'var(--text-primary)' }}>Orbit</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'Inter, sans-serif' }}>Every timezone. One orbit.</div>
+          </div>
+          {/* Center */}
+          <div className="hidden md:block" style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'Inter, sans-serif' }}>
+            Made for remote teams everywhere 🌍
+          </div>
+          {/* Right */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)', fontFamily: 'Inter, sans-serif' }}>
+            <span>Built with Next.js</span>
+            <span>·</span>
+            <a
+              href="https://github.com/rauf17/orbit"
+              target="_blank" rel="noopener noreferrer"
+              style={{ color: 'var(--text-muted)', textDecoration: 'none', transition: 'color 150ms ease' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+            >
+              Open source ↗
+            </a>
+          </div>
+        </footer>
       </div>
 
       {toastOpen && <Toast message="Link copied!" submessage="Share with your team" onClose={() => setToastOpen(false)} />}

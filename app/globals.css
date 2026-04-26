@@ -56,6 +56,20 @@ html {
   --accent-hover: #ffffff;
 }
 
+/* Smooth theme transitions */
+*, *::before, *::after {
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease,
+    box-shadow 200ms ease !important;
+}
+
+.no-theme-transition,
+.no-theme-transition * {
+  transition: none !important;
+}
+
 body {
   background: var(--bg-page);
   color: var(--text-primary);
@@ -120,11 +134,15 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 0 6px rgba(255,255,255,0.8);
 }
 
-/* Heading shimmer animation */
 @keyframes headingShimmer {
   0%   { background-position: 100% 50%; }
   50%  { background-position:   0% 50%; }
   100% { background-position: 100% 50%; }
+}
+
+@keyframes nowRipple {
+  0%   { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
 }
 
 /* Note textarea animation */

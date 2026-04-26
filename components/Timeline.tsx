@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useMemo, memo } from "react";
+import React, { useState, useRef, useMemo, memo, useEffect } from "react";
 import { City } from "../lib/cities";
+import AnalogClock from "./AnalogClock";
 import {
   hourToPercent,
   getOverlapHours,
@@ -80,7 +81,7 @@ function getMeetingHealth(sliderPct: number, cities: City[]) {
   return               { label: `Poor — only ${a}/${t} in hours`,        color: '#dc2626', bg: 'rgba(220,38,38,0.1)' };
 }
 
-const TimelineBar = ({ city }: { city: City }) => {
+const TimelineBar = ({ city, isFirstRow }: { city: City; isFirstRow: boolean }) => {
   const shift = useMemo(() => getCityTimeShift(city.timezone), [city.timezone]);
 
   const renderSegment = (start: number, end: number, bgColor: string, borderColor?: string, boxShadow?: string) => {
@@ -110,7 +111,25 @@ const TimelineBar = ({ city }: { city: City }) => {
               borderRight: end === 17 ? `2px solid ${borderColor}` : undefined 
             } : {})
           }}
-        />
+        >
+          {isFirstRow && day === 0 && start === 9 && (
+            <div 
+              style={{
+                position: 'absolute',
+                top: -16,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                fontSize: 9,
+                color: '#b0b0b0',
+                fontFamily: 'Inter, sans-serif',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none'
+              }}
+            >
+              9am — 5pm
+            </div>
+          )}
+        </div>
       );
     });
   };
@@ -129,45 +148,14 @@ const TimelineBar = ({ city }: { city: City }) => {
         style={{ background: 'var(--timeline-gradient)' }}
       />
       
+      {/* Hour tick marks at every 3h */}
       {[3, 6, 9, 12, 15, 18, 21].map(h => (
         <div 
           key={`tick-${h}`}
-          className="absolute bottom-0 w-[1px] h-[6px] bg-[rgba(34,42,53,0.15)] dark:bg-[rgba(255,255,255,0.15)] tick-mark z-[3]"
-          style={{ left: `${(h/24)*100}%` }}
+          className="absolute bottom-0 w-[1px] h-[4px] z-[3]"
+          style={{ left: `${(h/24)*100}%`, background: 'rgba(34,42,53,0.12)' }}
         />
       ))}
-    </div>
-  );
-};
-
-const AnalogClock = ({ timezone, now, meetingDate }: { timezone: string, now: Date, meetingDate: Date | null }) => {
-  const displayDate = meetingDate || now;
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour: "numeric",
-    minute: "numeric",
-    hourCycle: "h23",
-  }).formatToParts(displayDate);
-  
-  const hStr = parts.find((p) => p.type === "hour")?.value || "0";
-  const mStr = parts.find((p) => p.type === "minute")?.value || "0";
-  const hours = parseInt(hStr, 10);
-  const minutes = parseInt(mStr, 10);
-
-  const hourAngle = (hours % 12) * 30 + (minutes / 60) * 30;
-  const minuteAngle = minutes * 6;
-
-  return (
-    <div className="w-[18px] h-[18px] rounded-full border border-[var(--border-default)] bg-[var(--bg-page)] relative flex items-center justify-center flex-shrink-0">
-      <div 
-        className="absolute w-[1.5px] h-[4px] bg-[var(--text-primary)] rounded-full origin-bottom"
-        style={{ transform: `translateY(-2px) rotate(${hourAngle}deg)` }}
-      />
-      <div 
-        className="absolute w-[1px] h-[6px] bg-[var(--text-primary)] rounded-full origin-bottom"
-        style={{ transform: `translateY(-3px) rotate(${minuteAngle}deg)` }}
-      />
-      <div className="w-[2px] h-[2px] rounded-full bg-[var(--text-primary)] z-10" />
     </div>
   );
 };
@@ -190,7 +178,7 @@ const Timeline = ({
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [isVisible, setIsVisible] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!containerRef.current) return;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
@@ -504,14 +492,24 @@ END:VCALENDAR`;
               className="absolute top-0 bottom-0 w-[1px] bg-[var(--text-primary)] transition-all duration-[50ms] ease-linear now-indicator-line"
               style={{ left: `${currentSliderPercent}%` }}
             >
-              <div className="absolute -top-[3px] left-1/2 -translate-x-1/2 w-[7px] h-[7px] bg-[var(--text-primary)] rounded-full now-indicator-dot" />
+              {/* Dot + ripple ring */}
+              <div className="absolute -top-[3px] left-1/2 -translate-x-1/2">
+                <div className="w-[7px] h-[7px] bg-[var(--text-primary)] rounded-full now-indicator-dot relative">
+                  <div
+                    className="absolute inset-0 rounded-full"
+                    style={{
+                      border: '1px solid var(--text-primary)',
+                      animation: 'nowRipple 2s ease-out infinite',
+                      transformOrigin: 'center',
+                    }}
+                  />
+                </div>
+              </div>
               
               {/* Timestamp Label below rows */}
               <div 
                 className="absolute top-full mt-[8px] left-1/2 -translate-x-1/2 bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[6px] px-[8px] py-[2px] text-[11px] font-semibold font-sans text-[var(--text-primary)] whitespace-nowrap time-display"
-                style={{ 
-                  boxShadow: 'var(--shadow-sm)',
-                }}
+                style={{ boxShadow: 'var(--shadow-sm)' }}
               >
                 {meetingPercent !== null ? getMeetingDateStr(Intl.DateTimeFormat().resolvedOptions().timeZone) : formatTime(now, Intl.DateTimeFormat().resolvedOptions().timeZone, timeFormat)}
               </div>
@@ -638,9 +636,13 @@ END:VCALENDAR`;
                       {city.country}
                     </div>
 
+                    {/* Row 2.5 - Analog Clock (Specific Requirement) */}
+                    <div className="pl-[30px] md:pl-[38px] mt-1.5 mb-1.5">
+                      <AnalogClock timezone={city.timezone} size={22} />
+                    </div>
+
                     {/* Row 3 */}
-                    <div className="pl-[30px] md:pl-[38px] flex items-center gap-2 mt-[6px]">
-                      <AnalogClock timezone={city.timezone} now={now} meetingDate={meetingDateObj} />
+                    <div className="pl-[30px] md:pl-[38px] flex items-center gap-2">
                       <div className="transition-all duration-[120ms] ease-in-out badge-container">
                         <span 
                           key={meetingPercent !== null ? Math.floor(meetingDateObj?.getTime()! / 1000) : now.getSeconds()}
@@ -685,7 +687,7 @@ END:VCALENDAR`;
 
                   {/* Right Area (Timeline Bar) */}
                   <div className="flex-1 w-full min-w-0 relative flex items-center h-[48px] md:h-full">
-                    <TimelineBar city={city} />
+                    <TimelineBar city={city} isFirstRow={idx === 0} />
                   </div>
                 </div>
               );
