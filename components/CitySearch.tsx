@@ -39,10 +39,10 @@ const matchContinent = (city: City, filter: string) => {
   if (filter === "Americas") return city.continent === "North America" || city.continent === "South America";
   
   if (filter === "Middle East") {
-    return ["AE", "SA", "IL", "QA", "KW", "OM"].includes(city.countryCode);
+    return ["AE", "SA", "QA", "KW", "OM"].includes(city.countryCode);
   }
   if (filter === "Asia") {
-    return city.continent === "Asia" && !["AE", "SA", "IL", "QA", "KW", "OM"].includes(city.countryCode);
+    return city.continent === "Asia" && !["AE", "SA", "QA", "KW", "OM"].includes(city.countryCode);
   }
   
   return city.continent === filter;
@@ -132,7 +132,7 @@ export default function CitySearch({
   };
 
   return (
-    <div className="relative inline-block" ref={popoverRef}>
+    <div className="relative inline-block" ref={popoverRef} style={{ zIndex: 9999 }}>
       <style>{`
         @keyframes popoverIn {
           from { opacity: 0; transform: translateY(-8px); }
@@ -167,8 +167,8 @@ export default function CitySearch({
       {/* Dropdown Popover */}
       {isOpen && (
         <div
-          className="absolute top-full mt-2 left-0 w-[340px] bg-white rounded-[12px] shadow-lg border border-[rgba(34,42,53,0.08)] overflow-hidden z-50 flex flex-col"
-          style={{ animation: "popoverIn 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards" }}
+          className="city-search-dropdown absolute left-0 w-[340px] bg-white rounded-[12px] shadow-lg border border-[rgba(34,42,53,0.08)] overflow-hidden flex flex-col"
+          style={{ zIndex: 9999, top: 'calc(100% + 8px)', animation: "popoverIn 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards", position: 'absolute', isolation: 'isolate' }}
         >
           {/* Search Input */}
           <div className="flex items-center w-full px-4 border-b border-[rgba(34,42,53,0.08)]">

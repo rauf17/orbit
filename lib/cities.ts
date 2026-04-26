@@ -36,7 +36,6 @@ export const cities: City[] = [
   // Middle East
   { id: "dubai", name: "Dubai", country: "United Arab Emirates", countryCode: "AE", timezone: "Asia/Dubai", emoji: "🇦🇪", continent: "Asia" },
   { id: "riyadh", name: "Riyadh", country: "Saudi Arabia", countryCode: "SA", timezone: "Asia/Riyadh", emoji: "🇸🇦", continent: "Asia" },
-  { id: "tel-aviv", name: "Tel Aviv", country: "Israel", countryCode: "IL", timezone: "Asia/Jerusalem", emoji: "🇮🇱", continent: "Asia" },
   { id: "doha", name: "Doha", country: "Qatar", countryCode: "QA", timezone: "Asia/Qatar", emoji: "🇶🇦", continent: "Asia" },
   { id: "kuwait-city", name: "Kuwait City", country: "Kuwait", countryCode: "KW", timezone: "Asia/Kuwait", emoji: "🇰🇼", continent: "Asia" },
   { id: "muscat", name: "Muscat", country: "Oman", countryCode: "OM", timezone: "Asia/Muscat", emoji: "🇴🇲", continent: "Asia" },

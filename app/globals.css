@@ -57,10 +57,21 @@ html {
 }
 
 body {
-  background-color: var(--bg-page);
+  background: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-sans);
   transition: background-color 200ms ease, color 200ms ease;
+}
+
+/* Page sections transparent so starfield shows through */
+.page-bg-transparent {
+  background: transparent !important;
+}
+
+.city-search-dropdown {
+  isolation: isolate;
+  z-index: 9999 !important;
+  position: absolute !important;
 }
 
 .time-display {
@@ -107,6 +118,28 @@ h1, h2, h3, h4, h5, h6 {
 }
 [data-theme="dark"] .now-indicator-dot {
   box-shadow: 0 0 6px rgba(255,255,255,0.8);
+}
+
+/* Heading shimmer animation */
+@keyframes headingShimmer {
+  0%   { background-position: 100% 50%; }
+  50%  { background-position:   0% 50%; }
+  100% { background-position: 100% 50%; }
+}
+
+/* Note textarea animation */
+@keyframes noteReveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Cursor blink */
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.cursor-blink {
+  animation: cursorBlink 500ms step-end infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

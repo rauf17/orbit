@@ -10,64 +10,54 @@ export default function useTimezones() {
   const [selectedCities, setSelectedCities] = useState<City[]>([]);
   const [timeFormat, setTimeFormat] = useState<'12h' | '24h'>('12h');
   const [isInitialized, setIsInitialized] = useState(false);
+  const [noteText, setNoteText] = useState('');
 
   // Initialize state on mount
   useEffect(() => {
     let initialCityIds: string[] = [];
-
-    // 1. Check URL params
     const params = new URLSearchParams(window.location.search);
     const citiesParam = params.get('cities');
 
     if (citiesParam) {
       initialCityIds = citiesParam.split(',').filter(Boolean);
     } else {
-      // 2. Check localStorage
       const stored = localStorage.getItem('orbit-cities');
       if (stored) {
-        try {
-          initialCityIds = JSON.parse(stored);
-        } catch (e) {
-          // ignore parsing errors
-        }
+        try { initialCityIds = JSON.parse(stored); } catch { /* ignore */ }
       }
     }
 
-    // 3. Fallback to defaults
     if (!initialCityIds || initialCityIds.length === 0) {
       initialCityIds = DEFAULT_CITIES;
     }
 
-    // Resolve IDs to City objects
     const resolvedCities = initialCityIds
       .map((id) => allCities.find((c) => c.id === id))
       .filter((c): c is City => c !== undefined)
       .slice(0, MAX_CITIES);
 
-    // Remove duplicates
     const uniqueCities = Array.from(new Map(resolvedCities.map((c) => [c.id, c])).values());
-
     setSelectedCities(uniqueCities);
 
-    // Initialize time format
     const storedFormat = localStorage.getItem('orbit-timeformat');
     if (storedFormat === '12h' || storedFormat === '24h') {
       setTimeFormat(storedFormat);
     }
 
+    // Read note from URL
+    const urlNote = params.get('note');
+    if (urlNote) {
+      try { setNoteText(decodeURIComponent(urlNote)); } catch { setNoteText(urlNote); }
+    }
+
     setIsInitialized(true);
   }, []);
 
-  // Update localStorage and URL whenever selectedCities changes
+  // Sync cities to localStorage + URL
   useEffect(() => {
     if (!isInitialized) return;
-
     const cityIds = selectedCities.map((c) => c.id);
-
-    // Save to localStorage
     localStorage.setItem('orbit-cities', JSON.stringify(cityIds));
-
-    // Update URL without reloading the page
     const url = new URL(window.location.href);
     if (cityIds.length > 0) {
       url.searchParams.set('cities', cityIds.join(','));
@@ -77,11 +67,22 @@ export default function useTimezones() {
     window.history.replaceState({}, '', url.toString());
   }, [selectedCities, isInitialized]);
 
-  // Update timeFormat in localStorage whenever it changes
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('orbit-timeformat', timeFormat);
   }, [timeFormat, isInitialized]);
+
+  const updateNote = useCallback((text: string) => {
+    const trimmed = text.slice(0, 120);
+    setNoteText(trimmed);
+    const params = new URLSearchParams(window.location.search);
+    if (trimmed.trim()) {
+      params.set('note', encodeURIComponent(trimmed));
+    } else {
+      params.delete('note');
+    }
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+  }, []);
 
   const addCity = useCallback((city: City) => {
     setSelectedCities((prev) => {
@@ -117,5 +118,7 @@ export default function useTimezones() {
     toggleTimeFormat,
     maxCities: MAX_CITIES,
     isInitialized,
+    noteText,
+    updateNote,
   };
 }

@@ -85,11 +85,11 @@ export default function Navbar({
   return (
     <>
       <nav
-        className={`sticky top-0 z-40 h-[56px] w-full border-b border-[var(--border-default)] transition-colors duration-300 flex items-center justify-center backdrop-blur-[8px]`}
+        className={`sticky top-0 z-40 h-[56px] w-full border-b border-[var(--border-default)] transition-colors duration-300 flex items-center justify-center`}
         style={{
-          backgroundColor: scrolled 
-            ? (theme === 'dark' ? 'rgba(13,13,15,0.85)' : 'rgba(255,255,255,0.85)')
-            : 'var(--bg-page)',
+          backgroundColor: theme === 'dark' ? 'rgba(13,13,15,0.9)' : 'rgba(255,255,255,0.9)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
           animation: 'slideDownNavbar 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both'
         }}
       >

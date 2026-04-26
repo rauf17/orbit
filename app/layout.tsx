@@ -10,6 +10,7 @@ const inter = Inter({
 
 import { ThemeProvider } from "../components/ThemeProvider";
 import Starfield from "../components/Starfield";
+import SolarSystem from "../components/SolarSystem";
 
 export const metadata: Metadata = {
   title: "Orbit — World Timezone Planner",
@@ -37,9 +38,14 @@ export default function RootLayout({
         `}} />
       </head>
       <body className="antialiased">
+        {/* Background layers at z-index 0, fixed, behind all content */}
         <Starfield />
+        <SolarSystem />
         <ThemeProvider>
-          <div className="relative z-[1]">{children}</div>
+          {/* Content wrapper transparent so backgrounds show through */}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            {children}
+          </div>
         </ThemeProvider>
       </body>
     </html>

@@ -45,31 +45,39 @@ const getCityTimeShift = (timezone: string) => {
   return (cityTime - localTime) / 3600000;
 };
 
-function getLocalHourAtUTC(utcHour: number, timezone: string): number {
-  const date = new Date();
-  date.setUTCHours(utcHour, 0, 0, 0);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    hour12: false,
-    timeZone: timezone,
-  }).formatToParts(date);
-  const h = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10);
-  return h === 24 ? 0 : h;
+function getUTCHourFromSlider(pct: number): number {
+  return Math.floor((pct / 100) * 24) % 24;
 }
 
-function getMeetingHealth(sliderPercent: number, cities: City[]) {
-  const utcHour = Math.floor((sliderPercent / 100) * 24);
+function getLocalHourAtUTC(utcHour: number, tz: string): number {
+  try {
+    const now = new Date();
+    now.setUTCHours(utcHour, 0, 0, 0);
+    const formatted = new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      hour12: false,
+      timeZone: tz,
+    }).format(now);
+    const h = parseInt(formatted, 10);
+    return isNaN(h) ? 0 : h % 24;
+  } catch {
+    return 0;
+  }
+}
+
+function getMeetingHealth(sliderPct: number, cities: City[]) {
+  const utcHour = getUTCHourFromSlider(sliderPct);
   const available = cities.filter(c => {
-    const h = getLocalHourAtUTC(utcHour, c.timezone);
-    return h >= 9 && h < 17;
+    const localH = getLocalHourAtUTC(utcHour, c.timezone);
+    return localH >= 9 && localH < 17;
   });
   const a = available.length;
   const t = cities.length;
-  const ratio = a / t;
-  if (ratio === 1)   return { label: `✓ Perfect — all ${t} teams available`, color: '#16a34a', bg: 'rgba(22,163,74,0.1)' };
-  if (ratio >= 0.75) return { label: `Good — ${a}/${t} teams available`,      color: '#ca8a04', bg: 'rgba(202,138,4,0.1)' };
-  if (ratio >= 0.5)  return { label: `Fair — ${a}/${t} teams available`,       color: '#d97706', bg: 'rgba(217,119,6,0.1)' };
-  return               { label: `Poor — only ${a}/${t} in working hours`,      color: '#dc2626', bg: 'rgba(220,38,38,0.1)' };
+  const r = t > 0 ? a / t : 0;
+  if (r === 1)   return { label: `✓ Perfect — all ${t} available`,    color: '#16a34a', bg: 'rgba(22,163,74,0.1)' };
+  if (r >= 0.75) return { label: `Good — ${a}/${t} available`,           color: '#ca8a04', bg: 'rgba(202,138,4,0.1)' };
+  if (r >= 0.5)  return { label: `Fair — ${a}/${t} available`,           color: '#d97706', bg: 'rgba(217,119,6,0.1)' };
+  return               { label: `Poor — only ${a}/${t} in hours`,        color: '#dc2626', bg: 'rgba(220,38,38,0.1)' };
 }
 
 const TimelineBar = ({ city }: { city: City }) => {
@@ -646,16 +654,16 @@ END:VCALENDAR`;
 
                     {/* Row 4 */}
                     <div className="pl-[30px] md:pl-[38px] flex flex-wrap items-center gap-1 mt-[4px]">
-                      <div className="text-[10px] font-sans text-[var(--text-muted)] font-medium leading-none bg-transparent">
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400, background: 'none', border: 'none', padding: 0, opacity: 0.6 }}>
                         {getOffsetString(city.timezone)}
                       </div>
                       {activeDST && (
-                        <div className="text-[9px] font-sans text-[#d97706] bg-[rgba(217,119,6,0.08)] rounded-[3px] px-[4px] py-[1px] leading-none border-none">
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', background: 'none', border: 'none', opacity: 0.5, fontWeight: 400 }}>
                           DST
                         </div>
                       )}
                       {dayInd && (
-                        <div className="text-[9px] font-sans text-[#d97706] bg-[rgba(217,119,6,0.08)] rounded-[3px] px-[4px] py-[1px] leading-none border-none">
+                        <div style={{ fontSize: 9, color: '#d97706', opacity: 0.7, background: 'none', border: 'none' }}>
                           {dayInd.label}
                         </div>
                       )}
