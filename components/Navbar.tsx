@@ -26,6 +26,29 @@ const HelpIcon = () => (
   </svg>
 );
 
+import { useTheme } from "./ThemeProvider";
+import { OrbitIcon } from "./OrbitIcon";
+
+const SunIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="5"></circle>
+    <line x1="12" y1="1" x2="12" y2="3"></line>
+    <line x1="12" y1="21" x2="12" y2="23"></line>
+    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+    <line x1="1" y1="12" x2="3" y2="12"></line>
+    <line x1="21" y1="12" x2="23" y2="12"></line>
+    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+  </svg>
+);
+
+const MoonIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+  </svg>
+);
+
 export default function Navbar({
   timeFormat,
   toggleTimeFormat,
@@ -38,6 +61,7 @@ export default function Navbar({
   const [scrolled, setScrolled] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -61,52 +85,46 @@ export default function Navbar({
   return (
     <>
       <nav
-        className={`sticky top-0 z-40 h-[56px] w-full border-b border-[rgba(34,42,53,0.08)] transition-all duration-300 flex items-center justify-center ${
-          scrolled ? "bg-[rgba(255,255,255,0.85)] backdrop-blur-[8px]" : "bg-white"
-        }`}
+        className={`sticky top-0 z-40 h-[56px] w-full border-b border-[var(--border-default)] transition-colors duration-300 flex items-center justify-center backdrop-blur-[8px]`}
+        style={{
+          backgroundColor: scrolled 
+            ? (theme === 'dark' ? 'rgba(13,13,15,0.85)' : 'rgba(255,255,255,0.85)')
+            : 'var(--bg-page)',
+          animation: 'slideDownNavbar 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both'
+        }}
       >
+        <style>{`
+          @keyframes slideDownNavbar {
+            from { transform: translateY(-100%); }
+            to { transform: translateY(0); }
+          }
+        `}</style>
         <div className="w-full max-w-[1100px] px-[24px] flex items-center justify-between">
           <div
             className="flex items-center gap-[8px] relative group cursor-pointer"
             onMouseEnter={() => setShowTooltip(true)}
             onMouseLeave={() => setShowTooltip(false)}
           >
-            <style>{`
-              @keyframes orbitDotSmall {
-                from { transform: rotate(0deg) translateX(7px) rotate(0deg); }
-                to { transform: rotate(360deg) translateX(7px) rotate(-360deg); }
-              }
-            `}</style>
-            <div className="relative w-[18px] h-[18px] flex items-center justify-center">
-              <svg width="18" height="18" viewBox="0 0 18 18" className="absolute inset-0">
-                <circle cx="9" cy="9" r="7" fill="none" stroke="#242424" strokeWidth="1.5" />
-              </svg>
-              <div
-                className="absolute w-[4px] h-[4px] bg-[#242424] rounded-full group-hover:hidden"
-                style={{ animation: "orbitDotSmall 1.5s linear infinite" }}
-              />
-              <div
-                className="absolute w-[4px] h-[4px] bg-[#242424] rounded-full hidden group-hover:block"
-                style={{ animation: "orbitDotSmall 0.8s linear infinite" }}
-              />
+            <div className="text-[var(--text-primary)]">
+              <OrbitIcon size={18} speed={3} />
             </div>
-            <span className="text-[15px] font-display font-semibold text-[#242424]">Orbit</span>
+            <span className="text-[15px] font-display font-semibold text-[var(--text-primary)]">Orbit</span>
 
             {showTooltip && (
-              <div className="absolute top-full mt-[8px] left-0 bg-white shadow-sm border border-[rgba(34,42,53,0.08)] rounded-[6px] px-[8px] py-[6px] text-[11px] font-sans text-[#898989] whitespace-nowrap z-50 animate-in fade-in zoom-in duration-150 delay-500 fill-mode-both">
+              <div className="absolute top-full mt-[8px] left-0 bg-[var(--bg-page)] shadow-sm border border-[var(--border-default)] rounded-[6px] px-[8px] py-[6px] text-[11px] font-sans text-[var(--text-secondary)] whitespace-nowrap z-50 animate-in fade-in zoom-in duration-150 delay-500 fill-mode-both">
                 Every timezone. One orbit.
               </div>
             )}
           </div>
 
           <div className="flex items-center gap-[8px]">
-            <div className="flex items-center bg-white shadow-sm border border-[rgba(34,42,53,0.08)] rounded-[4px] overflow-hidden">
+            <div className="flex items-center bg-[var(--bg-page)] shadow-sm border border-[var(--border-default)] rounded-[8px] overflow-hidden">
               <button
                 onClick={timeFormat === "24h" ? toggleTimeFormat : undefined}
                 className={`px-[12px] py-[8px] text-[12px] font-sans font-semibold transition-colors duration-150 ${
                   timeFormat === "12h"
-                    ? "bg-[#242424] text-white"
-                    : "bg-white text-[#898989] hover:bg-[#f5f5f5]"
+                    ? "bg-[var(--accent)] text-[var(--bg-page)]"
+                    : "bg-[var(--bg-page)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]"
                 }`}
               >
                 12h
@@ -115,8 +133,8 @@ export default function Navbar({
                 onClick={timeFormat === "12h" ? toggleTimeFormat : undefined}
                 className={`px-[12px] py-[8px] text-[12px] font-sans font-semibold transition-colors duration-150 ${
                   timeFormat === "24h"
-                    ? "bg-[#242424] text-white"
-                    : "bg-white text-[#898989] hover:bg-[#f5f5f5]"
+                    ? "bg-[var(--accent)] text-[var(--bg-page)]"
+                    : "bg-[var(--bg-page)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]"
                 }`}
               >
                 24h
@@ -124,18 +142,26 @@ export default function Navbar({
             </div>
 
             <button
+              onClick={toggleTheme}
+              className="flex items-center justify-center w-[34px] h-[34px] bg-[var(--bg-page)] shadow-sm border border-[var(--border-default)] rounded-[8px] text-[var(--text-primary)] hover:shadow-md hover:-translate-y-[1px] transition-all duration-150 active:translate-y-0 active:shadow-sm"
+              title="Toggle Theme"
+            >
+              {theme === "light" ? <MoonIcon /> : <SunIcon />}
+            </button>
+
+            <button
               onClick={onShare}
-              className="flex items-center gap-[6px] bg-white shadow-sm border border-[rgba(34,42,53,0.08)] rounded-[8px] px-[14px] py-[10px] text-[#242424] hover:shadow-md hover:-translate-y-[1px] transition-all duration-150 active:translate-y-0 active:shadow-sm"
+              className="flex items-center gap-[6px] bg-[var(--bg-page)] shadow-sm border border-[var(--border-default)] rounded-[8px] px-[14px] py-[8px] h-[34px] text-[var(--text-primary)] hover:shadow-md hover:-translate-y-[1px] transition-all duration-150 active:translate-y-0 active:shadow-sm"
             >
               <LinkIcon />
               <span className="text-[13px] font-sans font-semibold hidden md:block">Share</span>
             </button>
 
-            <div className="w-[1px] h-[20px] bg-[rgba(34,42,53,0.08)] mx-[4px]"></div>
+            <div className="w-[1px] h-[20px] bg-[var(--border-default)] mx-[4px]"></div>
 
             <button
               onClick={() => setShowShortcuts(true)}
-              className="text-[#898989] hover:text-[#242424] transition-colors p-[4px]"
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors p-[4px]"
               title="Keyboard Shortcuts"
             >
               <HelpIcon />
@@ -145,7 +171,7 @@ export default function Navbar({
               href="https://github.com/rauf17/orbit"
               target="_blank"
               rel="noreferrer"
-              className="text-[#898989] hover:text-[#242424] transition-colors p-[4px] ml-[2px]"
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors p-[4px] ml-[2px]"
             >
               <GithubIcon />
             </a>
@@ -156,30 +182,30 @@ export default function Navbar({
       {/* Shortcuts Modal */}
       {showShortcuts && (
         <div className="fixed inset-0 z-[100]">
-          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowShortcuts(false)} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] bg-white rounded-[12px] shadow-lg border border-[rgba(34,42,53,0.08)] p-[24px]">
-            <h3 className="text-[16px] font-display font-semibold text-[#242424] mb-[16px]">Keyboard Shortcuts</h3>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowShortcuts(false)} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] bg-[var(--bg-surface)] rounded-[12px] shadow-lg border border-[var(--border-strong)] p-[24px]">
+            <h3 className="text-[16px] font-display font-semibold text-[var(--text-primary)] mb-[16px]">Keyboard Shortcuts</h3>
             <div className="flex flex-col gap-[12px]">
               <div className="flex items-center justify-between">
-                <span className="text-[14px] font-sans text-[#898989]">Add City</span>
-                <kbd className="px-[6px] py-[2px] bg-[#f5f5f5] border border-[rgba(34,42,53,0.08)] rounded-[4px] text-[12px] font-sans font-semibold text-[#242424]">A</kbd>
+                <span className="text-[14px] font-sans text-[var(--text-secondary)]">Add City</span>
+                <kbd className="px-[6px] py-[2px] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-[4px] text-[12px] font-sans font-semibold text-[var(--text-primary)]">A</kbd>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[14px] font-sans text-[#898989]">Share</span>
-                <kbd className="px-[6px] py-[2px] bg-[#f5f5f5] border border-[rgba(34,42,53,0.08)] rounded-[4px] text-[12px] font-sans font-semibold text-[#242424]">S</kbd>
+                <span className="text-[14px] font-sans text-[var(--text-secondary)]">Share</span>
+                <kbd className="px-[6px] py-[2px] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-[4px] text-[12px] font-sans font-semibold text-[var(--text-primary)]">S</kbd>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[14px] font-sans text-[#898989]">Toggle 12h/24h</span>
-                <kbd className="px-[6px] py-[2px] bg-[#f5f5f5] border border-[rgba(34,42,53,0.08)] rounded-[4px] text-[12px] font-sans font-semibold text-[#242424]">T</kbd>
+                <span className="text-[14px] font-sans text-[var(--text-secondary)]">Toggle 12h/24h</span>
+                <kbd className="px-[6px] py-[2px] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-[4px] text-[12px] font-sans font-semibold text-[var(--text-primary)]">T</kbd>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[14px] font-sans text-[#898989]">Close Dropdowns</span>
-                <kbd className="px-[6px] py-[2px] bg-[#f5f5f5] border border-[rgba(34,42,53,0.08)] rounded-[4px] text-[12px] font-sans font-semibold text-[#242424]">Esc</kbd>
+                <span className="text-[14px] font-sans text-[var(--text-secondary)]">Close Dropdowns</span>
+                <kbd className="px-[6px] py-[2px] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-[4px] text-[12px] font-sans font-semibold text-[var(--text-primary)]">Esc</kbd>
               </div>
             </div>
             <button 
               onClick={() => setShowShortcuts(false)}
-              className="mt-[24px] w-full py-[10px] bg-[#f5f5f5] hover:bg-[#e5e5e5] rounded-[8px] text-[13px] font-sans font-semibold text-[#242424] transition-colors"
+              className="mt-[24px] w-full py-[10px] bg-[var(--bg-elevated)] hover:bg-[var(--border-default)] rounded-[8px] text-[13px] font-sans font-semibold text-[var(--text-primary)] transition-colors"
             >
               Close
             </button>

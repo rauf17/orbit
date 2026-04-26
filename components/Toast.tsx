@@ -1,61 +1,65 @@
-"use client";
-import { useEffect, useState } from "react";
+'use client';
+import { useEffect, useRef, useState } from 'react';
 
-export default function Toast({
-  show,
-  onClose,
-}: {
-  show: boolean;
+interface ToastProps {
+  message: string;
+  submessage?: string;
+  type?: 'success' | 'calendar' | 'error';
   onClose: () => void;
-}) {
+}
+
+export default function Toast({ message, submessage, type = 'success', onClose }: ToastProps) {
   const [visible, setVisible] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const dismiss = () => {
+    setLeaving(true);
+    setTimeout(() => onClose(), 300);
+  };
 
   useEffect(() => {
-    if (show) {
-      setVisible(true);
-      const timer = setTimeout(() => {
-        setVisible(false);
-        setTimeout(onClose, 300); // Wait for exit animation
-      }, 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [show, onClose]);
-
-  if (!show && !visible) return null;
+    setTimeout(() => setVisible(true), 10);
+    timerRef.current = setTimeout(dismiss, 2500);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   return (
-    <div
-      className={`fixed bottom-[24px] right-[24px] z-[9999] transition-all duration-300
-        ${visible ? "translate-y-0 opacity-100" : "translate-y-[16px] opacity-0"}
-      `}
-    >
+    <div style={{
+      position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+      background: 'var(--bg-page)', borderRadius: 10, padding: '14px 16px',
+      boxShadow: 'var(--shadow-lg)',
+      border: '1px solid var(--border-default)',
+      transform: visible && !leaving ? 'translateY(0)' : 'translateY(16px)',
+      opacity: visible && !leaving ? 1 : 0,
+      transition: 'transform 300ms cubic-bezier(0.16,1,0.3,1), opacity 300ms ease',
+      minWidth: 220, overflow: 'hidden'
+    }}>
+      <button onClick={dismiss} style={{
+        position: 'absolute', top: 8, right: 8,
+        background: 'none', border: 'none', cursor: 'pointer',
+        fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1
+      }}>×</button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingRight: 16 }}>
+        <span style={{ color: 'var(--success)', fontSize: 16 }}>✓</span>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{message}</div>
+          {submessage && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{submessage}</div>}
+        </div>
+      </div>
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, height: 2,
+        background: 'var(--success)', borderRadius: '0 0 10px 10px',
+        animation: 'toastProgress 2.5s linear forwards'
+      }} />
       <style>{`
         @keyframes toastProgress {
           from { width: 100%; }
           to { width: 0%; }
         }
       `}</style>
-      <div className="relative bg-white shadow-lg rounded-[10px] px-[16px] py-[14px] border border-[rgba(34,42,53,0.08)] overflow-hidden flex items-center gap-[12px] min-w-[220px]">
-        <div className="text-[#16a34a]">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[13px] font-sans font-semibold text-[#242424] leading-tight">
-            Link copied!
-          </span>
-          <span className="text-[11px] font-sans text-[#898989] leading-tight mt-0.5">
-            Share with your team
-          </span>
-        </div>
-        
-        {/* Progress Bar */}
-        <div 
-          className="absolute bottom-0 left-0 h-[3px] bg-[#16a34a]" 
-          style={{ animation: visible ? 'toastProgress 2.5s linear forwards' : 'none' }}
-        />
-      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { OrbitIcon } from "./OrbitIcon";
 
 export default function SplashScreen() {
   const [exit, setExit] = useState(false);
@@ -47,24 +48,8 @@ export default function SplashScreen() {
       `}</style>
 
       {/* Orbit SVG */}
-      <div className="relative w-[32px] h-[32px] flex items-center justify-center">
-        <svg width="32" height="32" viewBox="0 0 32 32" className="absolute inset-0">
-          <circle
-            cx="16"
-            cy="16"
-            r="14"
-            fill="none"
-            stroke="#242424"
-            strokeWidth="2"
-            strokeDasharray="88"
-            strokeDashoffset="88"
-            style={{ animation: "drawCircle 600ms ease 100ms forwards" }}
-          />
-        </svg>
-        <div
-          className="absolute w-[6px] h-[6px] bg-[#242424] rounded-full"
-          style={{ animation: "orbitDot 1.5s linear infinite" }}
-        />
+      <div className="relative flex items-center justify-center text-[var(--text-primary)]">
+        <OrbitIcon size={40} speed={4} />
       </div>
 
       <h1

@@ -16,6 +16,8 @@ interface TimelineProps {
   timeFormat: "12h" | "24h";
   onRemoveCity: (cityId: string) => void;
   onReorderCities: (from: number, to: number) => void;
+  meetingPercent: number | null;
+  setMeetingPercent: (p: number | null) => void;
 }
 
 const DragHandleIcon = () => (
@@ -43,10 +45,37 @@ const getCityTimeShift = (timezone: string) => {
   return (cityTime - localTime) / 3600000;
 };
 
+function getLocalHourAtUTC(utcHour: number, timezone: string): number {
+  const date = new Date();
+  date.setUTCHours(utcHour, 0, 0, 0);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    hour12: false,
+    timeZone: timezone,
+  }).formatToParts(date);
+  const h = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10);
+  return h === 24 ? 0 : h;
+}
+
+function getMeetingHealth(sliderPercent: number, cities: City[]) {
+  const utcHour = Math.floor((sliderPercent / 100) * 24);
+  const available = cities.filter(c => {
+    const h = getLocalHourAtUTC(utcHour, c.timezone);
+    return h >= 9 && h < 17;
+  });
+  const a = available.length;
+  const t = cities.length;
+  const ratio = a / t;
+  if (ratio === 1)   return { label: `✓ Perfect — all ${t} teams available`, color: '#16a34a', bg: 'rgba(22,163,74,0.1)' };
+  if (ratio >= 0.75) return { label: `Good — ${a}/${t} teams available`,      color: '#ca8a04', bg: 'rgba(202,138,4,0.1)' };
+  if (ratio >= 0.5)  return { label: `Fair — ${a}/${t} teams available`,       color: '#d97706', bg: 'rgba(217,119,6,0.1)' };
+  return               { label: `Poor — only ${a}/${t} in working hours`,      color: '#dc2626', bg: 'rgba(220,38,38,0.1)' };
+}
+
 const TimelineBar = ({ city }: { city: City }) => {
   const shift = useMemo(() => getCityTimeShift(city.timezone), [city.timezone]);
 
-  const renderSegment = (start: number, end: number, classes: string) => {
+  const renderSegment = (start: number, end: number, bgColor: string, borderColor?: string, boxShadow?: string) => {
     return [-1, 0, 1].map((day) => {
       const localStart = start - shift + day * 24;
       const localEnd = end - shift + day * 24;
@@ -60,21 +89,77 @@ const TimelineBar = ({ city }: { city: City }) => {
       return (
         <div
           key={`${day}-${start}`}
-          className={`absolute top-0 bottom-0 ${classes}`}
-          style={{ left: `${left}%`, width: `${width}%` }}
+          className={`absolute top-0 bottom-0 timeline-segment`}
+          style={{ 
+            left: `${left}%`, 
+            width: `${width}%`,
+            background: bgColor,
+            boxShadow: boxShadow,
+            ...(borderColor ? { 
+              borderTop: `1px solid ${borderColor}`, 
+              borderBottom: `1px solid ${borderColor}`, 
+              borderLeft: start === 9 ? `2px solid ${borderColor}` : undefined, 
+              borderRight: end === 17 ? `2px solid ${borderColor}` : undefined 
+            } : {})
+          }}
         />
       );
     });
   };
 
   return (
-    <div className="h-[48px] w-full relative rounded-[8px] overflow-hidden shadow-sm border border-[rgba(34,42,53,0.08)] bg-white">
-      {renderSegment(0, 6, "bg-[#f0f0f0]")}
-      {renderSegment(18, 24, "bg-[#f0f0f0]")}
-      {renderSegment(6, 9, "bg-[#e8eeff]")}
-      {renderSegment(17, 18, "bg-[#e8eeff]")}
-      {renderSegment(9, 17, "bg-[#ffffff] border-y border-[rgba(34,42,53,0.08)]")}
-      {renderSegment(9, 17, "bg-[rgba(22,163,74,0.05)] border-x-[2px] border-[rgba(22,163,74,0.25)]")}
+    <div className="h-[48px] w-full relative rounded-[8px] overflow-hidden shadow-sm border border-[var(--border-default)] bg-[var(--bg-page)] timeline-bar" style={{ border: '1px solid var(--border-default)' }}>
+      {renderSegment(0, 6, "var(--timeline-night)")}
+      {renderSegment(18, 24, "var(--timeline-night)")}
+      {renderSegment(6, 9, "var(--timeline-shoulder)")}
+      {renderSegment(17, 18, "var(--timeline-shoulder)")}
+      {renderSegment(9, 17, "var(--timeline-working)", undefined, "inset 0 0 0 1px var(--timeline-working-border)")}
+      {renderSegment(9, 17, "var(--timeline-overlap)", undefined, "inset 0 0 0 1px rgba(22,163,74,0.2)")}
+      
+      <div 
+        className="absolute inset-0 pointer-events-none z-[2]"
+        style={{ background: 'var(--timeline-gradient)' }}
+      />
+      
+      {[3, 6, 9, 12, 15, 18, 21].map(h => (
+        <div 
+          key={`tick-${h}`}
+          className="absolute bottom-0 w-[1px] h-[6px] bg-[rgba(34,42,53,0.15)] dark:bg-[rgba(255,255,255,0.15)] tick-mark z-[3]"
+          style={{ left: `${(h/24)*100}%` }}
+        />
+      ))}
+    </div>
+  );
+};
+
+const AnalogClock = ({ timezone, now, meetingDate }: { timezone: string, now: Date, meetingDate: Date | null }) => {
+  const displayDate = meetingDate || now;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "numeric",
+    minute: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(displayDate);
+  
+  const hStr = parts.find((p) => p.type === "hour")?.value || "0";
+  const mStr = parts.find((p) => p.type === "minute")?.value || "0";
+  const hours = parseInt(hStr, 10);
+  const minutes = parseInt(mStr, 10);
+
+  const hourAngle = (hours % 12) * 30 + (minutes / 60) * 30;
+  const minuteAngle = minutes * 6;
+
+  return (
+    <div className="w-[18px] h-[18px] rounded-full border border-[var(--border-default)] bg-[var(--bg-page)] relative flex items-center justify-center flex-shrink-0">
+      <div 
+        className="absolute w-[1.5px] h-[4px] bg-[var(--text-primary)] rounded-full origin-bottom"
+        style={{ transform: `translateY(-2px) rotate(${hourAngle}deg)` }}
+      />
+      <div 
+        className="absolute w-[1px] h-[6px] bg-[var(--text-primary)] rounded-full origin-bottom"
+        style={{ transform: `translateY(-3px) rotate(${minuteAngle}deg)` }}
+      />
+      <div className="w-[2px] h-[2px] rounded-full bg-[var(--text-primary)] z-10" />
     </div>
   );
 };
@@ -85,31 +170,46 @@ const Timeline = ({
   timeFormat,
   onRemoveCity,
   onReorderCities,
+  meetingPercent,
+  setMeetingPercent,
 }: TimelineProps) => {
   const [hoverPercent, setHoverPercent] = useState<number | null>(null);
-  const [meetingPercent, setMeetingPercent] = useState<number | null>(null);
+  const [hoverPos, setHoverPos] = useState({ left: 0, top: 20 });
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [isVisible, setIsVisible] = useState(false);
+
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setIsVisible(true);
+        observer.disconnect();
+      }
+    }, { threshold: 0.1 });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    
-    // Support touch and mouse
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
     
-    // On mobile, the right area might be full width or have no left sidebar layout
     const isMobile = window.innerWidth < 768;
-    const rightAreaLeft = isMobile ? rect.left : rect.left + 220; 
-    const rightAreaWidth = isMobile ? rect.width : rect.width - 220;
+    const rightAreaLeft = isMobile ? rect.left : rect.left + 200; 
+    const rightAreaWidth = isMobile ? rect.width : rect.width - 200;
     
     const x = clientX - rightAreaLeft;
 
     if (x >= 0 && x <= rightAreaWidth) {
-      setHoverPercent((x / rightAreaWidth) * 100);
+      const p = (x / rightAreaWidth) * 100;
+      setHoverPercent(p);
+      setHoverPos({ left: x + (isMobile ? 0 : 200), top: clientY - rect.top });
     } else {
       setHoverPercent(null);
     }
@@ -153,6 +253,8 @@ const Timeline = ({
 
   const baseShift = cities.length > 0 ? getCityTimeShift(cities[0].timezone) : 0;
   const nowPercent = hourToPercent(now.getHours(), now.getMinutes());
+  
+  const currentSliderPercent = meetingPercent !== null ? meetingPercent : nowPercent;
 
   const hoverDate = useMemo(() => {
     if (hoverPercent === null) return now;
@@ -161,40 +263,142 @@ const Timeline = ({
     return new Date(d.getTime() + totalMinutes * 60 * 1000);
   }, [hoverPercent, now]);
   
-  const getMeetingDate = (timezone: string) => {
+  const getMeetingDateStr = (timezone: string) => {
     if (meetingPercent === null) return "";
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const totalMinutes = Math.round((meetingPercent / 100) * 24 * 60);
     const targetDate = new Date(d.getTime() + totalMinutes * 60 * 1000);
     
-    const timeStr = formatTime(targetDate, timezone, timeFormat);
-    const dayStr = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' }).format(targetDate);
+    return formatTime(targetDate, timezone, timeFormat);
+  };
+
+  const getDayIndicator = (timezone: string) => {
+    const targetDate = meetingPercent !== null 
+      ? new Date(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime() + Math.round((meetingPercent / 100) * 24 * 60) * 60000)
+      : now;
+      
+    const utcDateStr = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", year: 'numeric', month: '2-digit', day: '2-digit' }).format(targetDate);
+    const localDateStr = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(targetDate);
     
-    return `📅 ${dayStr} ${timeStr}`;
+    if (utcDateStr === localDateStr) return null;
+    
+    const uParts = utcDateStr.split('/');
+    const lParts = localDateStr.split('/');
+    const uInt = parseInt(`${uParts[2]}${uParts[0]}${uParts[1]}`);
+    const lInt = parseInt(`${lParts[2]}${lParts[0]}${lParts[1]}`);
+    
+    if (lInt > uInt) return { label: "+1", title: "Tomorrow" };
+    if (lInt < uInt) return { label: "-1", title: "Yesterday" };
+    return null;
   };
 
   const markers = [0, 3, 6, 9, 12, 15, 18, 21];
 
+  const [copied, setCopied] = useState(false);
+  const handleCopyTimes = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    const baseHourStr = formatTime(hoverDate, "UTC", timeFormat);
+    const title = `${baseHourStr} UTC\n`;
+    
+    const txt = title + cities.map(c => {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const tm = Math.round(((meetingPercent ?? hoverPercent ?? nowPercent) / 100) * 24 * 60);
+      const td = new Date(d.getTime() + tm * 60 * 1000);
+      return `${c.name}: ${formatTime(td, c.timezone, "12h")}`;
+    }).join('\n');
+    
+    navigator.clipboard.writeText(txt).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  const handleCreateEvent = () => {
+    if (meetingPercent === null) return;
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const totalMinutes = Math.round((meetingPercent / 100) * 24 * 60);
+    d.setTime(d.getTime() + totalMinutes * 60 * 1000);
+    
+    const startUTC = d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const endD = new Date(d.getTime() + 60 * 60 * 1000);
+    const endUTC = endD.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    
+    const cityTimes = cities.map(c => {
+      return `${c.name}: ${formatTime(d, c.timezone, "12h")}`;
+    }).join('\\n');
+    
+    const ics = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Orbit//Timezone Planner//EN
+BEGIN:VEVENT
+DTSTART:${startUTC}
+DTEND:${endUTC}
+SUMMARY:Meeting — Orbit
+DESCRIPTION:${cityTimes}
+LOCATION:Remote / Online
+END:VEVENT
+END:VCALENDAR`;
+    
+    const blob = new Blob([ics], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'orbit-meeting.ics';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const healthScore = useMemo(() => {
+    if (cities.length === 0) return null;
+    return getMeetingHealth(currentSliderPercent, cities);
+  }, [currentSliderPercent, cities]);
+
+  const meetingDateObj = meetingPercent !== null 
+    ? new Date(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime() + Math.round((meetingPercent / 100) * 24 * 60) * 60000)
+    : null;
+
   return (
-    <>
+    <div className="relative w-full pb-[40px]">
       <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to { opacity: 1; transform: translateY(0); }
+        @keyframes slideInLeft {
+          from { opacity: 0; transform: translateX(-16px); }
+          to { opacity: 1; transform: translateX(0); }
         }
         @keyframes slideOut {
           from { opacity: 1; transform: translateX(0); }
           to { opacity: 0; transform: translateX(16px); }
         }
+        @keyframes popInLeft {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes popInRight {
+          from { opacity: 0; transform: translateX(-100%) scale(0.95); }
+          to { opacity: 1; transform: translateX(-100%) scale(1); }
+        }
+        @keyframes pulseTime {
+          0% { opacity: 1; }
+          50% { opacity: 0.7; }
+          100% { opacity: 1; }
+        }
+        @keyframes fadeTime {
+          from { opacity: 0.5; }
+          to { opacity: 1; }
+        }
         
+        .pulse-time {
+          animation: pulseTime 1s infinite;
+        }
+
         .meeting-slider::-webkit-slider-thumb {
           -webkit-appearance: none;
           appearance: none;
           width: 20px;
           height: 20px;
           border-radius: 50%;
-          background: #242424;
-          border: 2px solid #ffffff;
+          background: var(--text-primary);
+          border: 2px solid var(--bg-page);
           box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
           cursor: pointer;
         }
@@ -202,10 +406,14 @@ const Timeline = ({
           width: 20px;
           height: 20px;
           border-radius: 50%;
-          background: #242424;
-          border: 2px solid #ffffff;
+          background: var(--text-primary);
+          border: 2px solid var(--bg-page);
           box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
           cursor: pointer;
+        }
+        
+        [data-theme="dark"] .tick-mark {
+          background-color: rgba(255,255,255,0.15) !important;
         }
       `}</style>
 
@@ -213,7 +421,7 @@ const Timeline = ({
         {meetingPercent !== null && (
           <button 
             onClick={() => setMeetingPercent(null)}
-            className="text-[11px] font-sans font-semibold text-[#898989] hover:text-[#242424] transition-colors duration-150 absolute right-0 -top-6 bg-transparent"
+            className="text-[11px] font-sans font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors duration-150 absolute right-0 -top-6 bg-transparent"
           >
             ↺ Now
           </button>
@@ -221,7 +429,7 @@ const Timeline = ({
       </div>
 
       <div
-        className="w-full relative select-none"
+        className="w-full relative select-none z-10"
         ref={containerRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
@@ -230,8 +438,7 @@ const Timeline = ({
         onTouchEnd={handleMouseLeave}
       >
         {/* Header */}
-        <div className="flex w-full">
-          <div className="hidden md:block w-[220px] flex-shrink-0" />
+        <div className="flex w-full md:pl-[200px]">
           <div className="flex-1 min-w-0 relative h-[28px]">
             {markers.map((h) => {
               const label =
@@ -241,7 +448,7 @@ const Timeline = ({
               return (
                 <div
                   key={h}
-                  className="absolute text-[10px] font-sans text-[#b0b0b0] -translate-x-1/2 bottom-1"
+                  className="absolute text-[10px] font-sans text-[var(--text-muted)] -translate-x-1/2 bottom-1"
                   style={{ left: `${(h / 24) * 100}%` }}
                 >
                   {label}
@@ -254,7 +461,7 @@ const Timeline = ({
         {/* Rows Container */}
         <div className="relative w-full">
           {/* Overlap Zone */}
-          <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-220px)] pointer-events-none z-10 hidden md:block">
+          <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-10 hidden md:block">
             {blocks.map((block, idx) => {
               return [-1, 0, 1].map((day) => {
                 const localStart = block.start - baseShift + day * 24;
@@ -283,84 +490,104 @@ const Timeline = ({
             })}
           </div>
 
-          {/* Now Indicator */}
-          <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-220px)] pointer-events-none z-20">
+          {/* Now Indicator & Needle */}
+          <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-20">
             <div
-              className="absolute top-0 bottom-0 w-[1.5px] bg-[#242424] transition-all duration-1000 ease-linear"
-              style={{ left: `${nowPercent}%` }}
+              className="absolute top-0 bottom-0 w-[1px] bg-[var(--text-primary)] transition-all duration-[50ms] ease-linear now-indicator-line"
+              style={{ left: `${currentSliderPercent}%` }}
             >
-              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#242424] rounded-full" />
-              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-white shadow-sm rounded-[4px] flex items-center justify-center px-[6px] py-[2px] text-[10px] font-semibold text-[#242424] whitespace-nowrap">
-                {formatTime(
-                  now,
-                  Intl.DateTimeFormat().resolvedOptions().timeZone,
-                  timeFormat
-                )}
+              <div className="absolute -top-[3px] left-1/2 -translate-x-1/2 w-[7px] h-[7px] bg-[var(--text-primary)] rounded-full now-indicator-dot" />
+              
+              {/* Timestamp Label below rows */}
+              <div 
+                className="absolute top-full mt-[8px] left-1/2 -translate-x-1/2 bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[6px] px-[8px] py-[2px] text-[11px] font-semibold font-sans text-[var(--text-primary)] whitespace-nowrap time-display"
+                style={{ 
+                  boxShadow: 'var(--shadow-sm)',
+                }}
+              >
+                {meetingPercent !== null ? getMeetingDateStr(Intl.DateTimeFormat().resolvedOptions().timeZone) : formatTime(now, Intl.DateTimeFormat().resolvedOptions().timeZone, timeFormat)}
               </div>
+
+              {/* Scrubber Connector Line */}
+              {meetingPercent !== null && (
+                <div className="absolute top-[calc(100%+32px)] left-1/2 -translate-x-1/2 w-[1px] h-[24px] border-l border-dashed border-[var(--border-strong)] pointer-events-none" />
+              )}
             </div>
           </div>
 
           {/* Hover Tooltip & Line */}
-          <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-220px)] pointer-events-none z-30 hidden md:block">
+          <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-30 hidden md:block overflow-visible">
             {hoverPercent !== null && meetingPercent === null && (
               <>
                 <div
-                  className="absolute top-0 bottom-0 w-px border-l border-dashed border-[#d0d0d0]"
+                  className="absolute top-0 bottom-0 w-px border-l border-dashed border-[var(--text-muted)]"
                   style={{ left: `${hoverPercent}%` }}
                 />
                 <div
-                  className="absolute z-40 bg-white shadow-lg rounded-[10px] px-3.5 py-3 min-w-[180px] pointer-events-none transition-transform duration-75"
+                  className="absolute z-40 bg-[var(--bg-elevated)] shadow-lg rounded-[10px] min-w-[180px] pointer-events-auto border border-[var(--border-default)] flex flex-col"
                   style={{
                     left: `calc(${hoverPercent}% + 16px)`,
-                    top: "20px",
+                    top: hoverPos.top - 20 > 0 ? hoverPos.top - 20 : 20,
                     transform: hoverPercent > 70 ? "translateX(-100%)" : "none",
                     marginLeft: hoverPercent > 70 ? "-32px" : "0",
+                    transition: "left 80ms ease, top 80ms ease",
+                    animation: hoverPercent > 70 ? 'popInRight 100ms ease forwards' : 'popInLeft 100ms ease forwards'
                   }}
+                  onMouseMove={(e) => e.stopPropagation()}
                 >
-                  <div className="text-[12px] font-semibold text-[#898989] mb-2 font-sans">
-                    UTC · {formatTime(hoverDate, "UTC", timeFormat)}
-                  </div>
-                  <div className="flex flex-col gap-[6px]">
-                    {cities.map((c) => {
-                      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-                      const tm = Math.round((hoverPercent / 100) * 24 * 60);
-                      const td = new Date(d.getTime() + tm * 60 * 1000);
-                      return (
-                        <div key={c.id} className="flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm">{c.emoji}</span>
-                            <span className="text-[12px] font-display font-semibold text-[#242424]">
-                              {c.name}
+                  <div className="px-3.5 pt-3 pb-2">
+                    <div className="text-[12px] font-semibold text-[var(--text-secondary)] mb-2 font-sans flex justify-between items-center">
+                      <span className="time-display">UTC · {formatTime(hoverDate, "UTC", timeFormat)}</span>
+                    </div>
+                    <div className="flex flex-col gap-[6px]">
+                      {cities.map((c) => {
+                        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+                        const tm = Math.round((hoverPercent / 100) * 24 * 60);
+                        const td = new Date(d.getTime() + tm * 60 * 1000);
+                        return (
+                          <div key={c.id} className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm">{c.emoji}</span>
+                              <span className="text-[12px] font-display font-semibold text-[var(--text-primary)]">
+                                {c.name}
+                              </span>
+                            </div>
+                            <span className="text-[13px] font-semibold text-[var(--text-primary)] font-sans time-display">
+                              {formatTime(td, c.timezone, "12h").replace(/ (AM|PM)/i, (m) => m.toLowerCase())}
                             </span>
                           </div>
-                          <span className="text-[13px] font-semibold text-[#242424] font-sans">
-                            {formatTime(td, c.timezone, "12h").replace(/ (AM|PM)/i, (m) => m.toLowerCase())}
-                          </span>
-                        </div>
-                      )
-                    })}
+                        )
+                      })}
+                    </div>
                   </div>
+                  <button
+                    onClick={handleCopyTimes}
+                    className="w-full py-[10px] text-[11px] font-sans font-semibold text-[#898989] border-t border-[var(--border-default)] hover:text-[#242424] hover:bg-[var(--bg-surface)] transition-colors rounded-b-[10px]"
+                  >
+                    {copied ? "✓ Copied" : "Copy all times"}
+                  </button>
                 </div>
               </>
             )}
           </div>
 
           {/* Rows */}
-          <div className="relative">
+          <div className="relative bg-[var(--bg-page)]">
             {cities.map((city, idx) => {
               const activeDST = isDSTActive(city.timezone);
+              const dayInd = getDayIndicator(city.timezone);
               
               return (
                 <div
                   key={city.id}
-                  className={`flex flex-col md:flex-row w-full md:h-[80px] items-start md:items-center group relative border-b border-[rgba(34,42,53,0.05)] py-4 gap-3 md:gap-0 ${
-                    dragOverIdx === idx ? "border-t-[2px] border-t-[#242424]" : ""
+                  className={`flex flex-col md:flex-row w-full md:h-[84px] items-start md:items-center group relative border-b border-[var(--border-default)] py-4 gap-3 md:gap-0 transition-transform duration-200 ease-in-out hover:translate-x-[4px] ${
+                    dragOverIdx === idx ? "border-t-[2px] border-t-[var(--text-primary)]" : ""
                   }`}
                   style={{
                     animation: removingIds.has(city.id)
                       ? "slideOut 200ms ease-out forwards"
-                      : `slideUp 300ms cubic-bezier(0.16, 1, 0.3, 1) ${idx * 80}ms both`,
-                    opacity: draggedIdx === idx ? 0.4 : 1,
+                      : (isVisible ? `slideInLeft 350ms cubic-bezier(0.16, 1, 0.3, 1) ${idx * 60}ms both` : "none"),
+                    opacity: draggedIdx === idx ? 0.4 : (isVisible ? 1 : 0),
                   }}
                   draggable="true"
                   onDragStart={(e) => {
@@ -384,59 +611,65 @@ const Timeline = ({
                     setDragOverIdx(null);
                   }}
                 >
-                  {/* Left Sidebar */}
-                  <div className="w-full md:w-[220px] h-auto md:h-full flex-shrink-0 md:pr-4 relative flex items-center justify-between md:justify-start">
-                    <div className="hidden md:block absolute left-0 opacity-0 group-hover:opacity-100 cursor-grab text-[#b0b0b0] p-2 -ml-4">
+                  {/* Left Sidebar - Typographic Hierarchy */}
+                  <div className="w-[200px] min-w-[200px] max-w-[200px] shrink-0 h-auto md:h-full pr-[16px] relative flex flex-col justify-center gap-[2px] bg-[var(--bg-surface)] py-2 md:py-0 px-3 md:px-0 rounded-md md:rounded-none md:bg-transparent">
+                    <div className="hidden md:block absolute left-0 opacity-0 group-hover:opacity-100 cursor-grab text-[var(--text-muted)] p-2 -ml-5">
                       <DragHandleIcon />
                     </div>
 
-                    <div className="flex flex-col md:pl-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[18px] leading-none">{city.emoji}</span>
-                        <span className="text-[14px] font-display font-semibold text-[#242424] leading-none truncate max-w-[120px] md:max-w-[150px]">
-                          {city.name}
+                    {/* Row 1 */}
+                    <div className="flex items-center gap-1.5 md:pl-2">
+                      <span className="w-[24px] text-[16px] leading-none text-center flex-shrink-0">{city.emoji}</span>
+                      <span className="text-[14px] font-display font-semibold text-[var(--text-primary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap">
+                        {city.name}
+                      </span>
+                    </div>
+                    
+                    {/* Row 2 */}
+                    <div className="pl-[30px] md:pl-[38px] text-[11px] font-sans text-[var(--text-secondary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap mt-0.5">
+                      {city.country}
+                    </div>
+
+                    {/* Row 3 */}
+                    <div className="pl-[30px] md:pl-[38px] flex items-center gap-2 mt-[6px]">
+                      <AnalogClock timezone={city.timezone} now={now} meetingDate={meetingDateObj} />
+                      <div className="transition-all duration-[120ms] ease-in-out badge-container">
+                        <span 
+                          key={meetingPercent !== null ? Math.floor(meetingDateObj?.getTime()! / 1000) : now.getSeconds()}
+                          className={`inline-block text-[20px] font-sans font-bold text-[var(--text-primary)] leading-none tracking-tight time-display ${meetingPercent === null ? "pulse-time" : ""}`}
+                          style={{ animation: 'fadeTime 0.15s ease' }}
+                        >
+                          {meetingPercent !== null ? getMeetingDateStr(city.timezone) : formatTime(now, city.timezone, timeFormat)}
                         </span>
-                      </div>
-                      <div className="text-[11px] font-sans text-[#898989] mt-1 truncate">
-                        {city.country}
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end md:items-start md:mt-1.5 md:pl-2">
-                      {meetingPercent !== null ? (
-                         <div className="bg-[#242424] text-white rounded-[6px] px-[10px] py-[4px] text-[12px] font-sans font-semibold tracking-tight whitespace-nowrap shadow-sm mb-1">
-                           {getMeetingDate(city.timezone)}
-                         </div>
-                      ) : (
-                        <div className="text-[20px] font-sans font-bold text-[#242424] leading-none tracking-tight mb-1 md:mb-0">
-                          {formatTime(now, city.timezone, timeFormat)}
+                    {/* Row 4 */}
+                    <div className="pl-[30px] md:pl-[38px] flex flex-wrap items-center gap-1 mt-[4px]">
+                      <div className="text-[10px] font-sans text-[var(--text-muted)] font-medium leading-none bg-transparent">
+                        {getOffsetString(city.timezone)}
+                      </div>
+                      {activeDST && (
+                        <div className="text-[9px] font-sans text-[#d97706] bg-[rgba(217,119,6,0.08)] rounded-[3px] px-[4px] py-[1px] leading-none border-none">
+                          DST
                         </div>
                       )}
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <div className="text-[10px] font-sans bg-[#f5f5f5] border border-[rgba(34,42,53,0.08)] rounded-[4px] px-[8px] py-[2px] text-[#898989]">
-                          {getOffsetString(city.timezone)}
+                      {dayInd && (
+                        <div className="text-[9px] font-sans text-[#d97706] bg-[rgba(217,119,6,0.08)] rounded-[3px] px-[4px] py-[1px] leading-none border-none">
+                          {dayInd.label}
                         </div>
-                        {activeDST && (
-                          <div 
-                            className="text-[9px] font-sans font-semibold text-[#d97706] bg-[rgba(217,119,6,0.1)] rounded-[3px] px-[6px] py-[2px]"
-                            title="Daylight Saving Time is active"
-                          >
-                            DST
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
 
                     <button
                       onClick={() => handleRemove(city.id)}
-                      className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 text-[#898989] hover:text-[#242424] p-1 hidden md:block"
+                      className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 hidden md:block"
                     >
                       <RemoveIcon />
                     </button>
-                    {/* Mobile remove button */}
                     <button
                       onClick={() => handleRemove(city.id)}
-                      className="md:hidden p-2 text-[#898989] ml-2"
+                      className="md:hidden absolute right-2 top-2 p-2 text-[var(--text-secondary)]"
                     >
                       <RemoveIcon />
                     </button>
@@ -455,16 +688,31 @@ const Timeline = ({
 
       {/* Meeting Time Finder Slider */}
       {cities.length > 0 && (
-        <div className="mt-[32px] flex flex-col items-center w-full md:pl-[220px]">
-           <div className="text-[12px] font-sans text-[#898989] mb-3">
-             Drag to find the best meeting time
+        <div className="mt-[24px] flex flex-col items-center w-full md:pl-[200px] relative z-20">
+           <div className="flex items-center gap-3 mb-3">
+             <div className="text-[12px] font-sans text-[var(--text-secondary)]">
+               Drag to find the best meeting time
+             </div>
+             {healthScore && (
+               <div 
+                 className="px-[14px] py-[10px] rounded-full text-[12px] font-sans font-semibold shadow-sm"
+                 style={{ 
+                   backgroundColor: healthScore.bg, 
+                   color: healthScore.color,
+                   transition: 'background-color 250ms ease, color 250ms ease, border-color 250ms ease'
+                 }}
+               >
+                 {healthScore.label}
+               </div>
+             )}
            </div>
+           
            <div className="relative w-full h-[20px] flex items-center group">
              {/* Custom Track */}
-             <div className="absolute left-0 right-0 h-[4px] bg-[#e5e5e5] rounded-full overflow-hidden">
+             <div className="absolute left-0 right-0 h-[4px] bg-[var(--border-strong)] rounded-full overflow-hidden">
                 <div 
-                  className="h-full bg-[#242424]" 
-                  style={{ width: `${meetingPercent !== null ? meetingPercent : nowPercent}%` }} 
+                  className="h-full bg-[var(--text-primary)] transition-all duration-75" 
+                  style={{ width: `${currentSliderPercent}%` }} 
                 />
              </div>
              {/* Slider Input */}
@@ -473,27 +721,37 @@ const Timeline = ({
                min="0" 
                max="100" 
                step="0.1" 
-               value={meetingPercent !== null ? meetingPercent : nowPercent}
+               value={currentSliderPercent}
                onChange={(e) => setMeetingPercent(parseFloat(e.target.value))}
-               className="meeting-slider absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
+               className="meeting-slider absolute inset-0 w-full h-full opacity-0 z-30 cursor-pointer"
              />
-             {/* Custom Thumb visual to sit on top if needed, but styling input thumb works */}
              <div 
-               className="absolute w-[20px] h-[20px] rounded-full bg-[#242424] border-2 border-white shadow-md pointer-events-none transition-transform duration-75 group-hover:scale-110"
-               style={{ left: `calc(${meetingPercent !== null ? meetingPercent : nowPercent}% - 10px)` }}
+               className="absolute w-[20px] h-[20px] rounded-full bg-[var(--text-primary)] border-[2px] border-[var(--bg-page)] shadow-md pointer-events-none transition-all duration-75 group-hover:scale-110 z-20"
+               style={{ left: `calc(${currentSliderPercent}% - 10px)` }}
              />
            </div>
-           {meetingPercent !== null && (
-             <button 
-               onClick={() => setMeetingPercent(null)}
-               className="mt-3 text-[12px] font-sans font-semibold text-[#898989] hover:text-[#242424] underline underline-offset-2 transition-colors"
-             >
-               Reset to live time
-             </button>
-           )}
+           
+           <div className="flex items-center gap-[12px] mt-6">
+             {meetingPercent !== null && (
+               <>
+                 <button 
+                   onClick={() => setMeetingPercent(null)}
+                   className="text-[12px] font-sans font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] underline underline-offset-2 transition-colors"
+                 >
+                   Reset to live time
+                 </button>
+                 <button
+                   onClick={handleCreateEvent}
+                   className="flex items-center gap-[6px] shadow-sm border border-[var(--border-default)] rounded-[8px] px-[14px] py-[10px] text-[13px] font-sans font-semibold text-[var(--text-primary)] bg-[var(--bg-page)] hover:shadow-md hover:-translate-y-[1px] transition-all duration-150"
+                 >
+                   📅 Add to Calendar
+                 </button>
+               </>
+             )}
+           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };
 
