@@ -13,6 +13,30 @@ import {
 import { OrbitIcon } from "./OrbitIcon";
 import AnalogClock from "./AnalogClock";
 import { useToast } from "../hooks/useToast";
+import { Sparkline } from "./Sparkline";
+import AvailabilitySparkline from "./AvailabilitySparkline";
+import { getHolidayForCity } from "../lib/getHoliday";
+import { useTheme } from "./ThemeProvider";
+
+function getSunGradient(localHour: number, isDarkMode: boolean): string {
+  if (isDarkMode) {
+    if (localHour >= 5 && localHour < 8)
+      return 'linear-gradient(90deg, transparent 0%, rgba(251,146,60,0.08) 30%, transparent 60%)';
+    if (localHour >= 17 && localHour < 20)
+      return 'linear-gradient(90deg, transparent 40%, rgba(239,68,68,0.06) 70%, transparent 100%)';
+    if (localHour >= 11 && localHour < 15)
+      return 'linear-gradient(90deg, transparent 30%, rgba(250,204,21,0.04) 50%, transparent 70%)';
+    return 'none';
+  } else {
+    if (localHour >= 5 && localHour < 8)
+      return 'linear-gradient(90deg, transparent 0%, rgba(251,146,60,0.06) 30%, transparent 60%)';
+    if (localHour >= 17 && localHour < 20)
+      return 'linear-gradient(90deg, transparent 40%, rgba(239,68,68,0.05) 70%, transparent 100%)';
+    if (localHour >= 11 && localHour < 15)
+      return 'linear-gradient(90deg, transparent 30%, rgba(250,204,21,0.04) 50%, transparent 70%)';
+    return 'none';
+  }
+}
 
 interface TimelineProps {
   cities: City[];
@@ -23,6 +47,7 @@ interface TimelineProps {
   onReorderCities: (from: number, to: number) => void;
   meetingPercent: number | null;
   setMeetingPercent: (p: number | null) => void;
+  isPresetLoading?: boolean;
 }
 
 const DragHandleIcon = () => (
@@ -54,6 +79,48 @@ function getLocalHourAtUTC(utcHour: number, tz: string, date: Date): number {
   } catch { return 0; }
 }
 
+function MiniClock({ hour, minute, isSleeping }: { hour: number; minute: number; isSleeping?: boolean }) {
+  const cx = 10, cy = 10, r = 9;
+  
+  const hourAngle = ((hour % 12) + minute / 60) * 30 - 90;
+  const hourRad = (hourAngle * Math.PI) / 180;
+  const hourX = cx + 5 * Math.cos(hourRad);
+  const hourY = cy + 5 * Math.sin(hourRad);
+  
+  const minAngle = minute * 6 - 90;
+  const minRad = (minAngle * Math.PI) / 180;
+  const minX = cx + 7.5 * Math.cos(minRad);
+  const minY = cy + 7.5 * Math.sin(minRad);
+
+  return (
+    <svg 
+      width="20" height="20" viewBox="0 0 20 20" 
+      className="flex-shrink-0 transition-opacity duration-500"
+      style={{ opacity: isSleeping ? 0.35 : 1, transition: 'opacity 0.4s ease' }}
+    >
+      <circle cx={cx} cy={cy} r={r} 
+        className="fill-none stroke-black/35 dark:stroke-white/20" 
+        strokeWidth="1" />
+      {[0,90,180,270].map(a => {
+        const rad = (a * Math.PI) / 180;
+        return <circle key={a} 
+          cx={cx + 7 * Math.cos(rad)} 
+          cy={cy + 7 * Math.sin(rad)} 
+          r="0.8" 
+          className="fill-black/45 dark:fill-white/30" />;
+      })}
+      <line x1={cx} y1={cy} x2={hourX} y2={hourY}
+        className="stroke-black/80 dark:stroke-white/70"
+        strokeWidth="1.5" strokeLinecap="round" />
+      <line x1={cx} y1={cy} x2={minX} y2={minY}
+        className="stroke-black/60 dark:stroke-white/50"
+        strokeWidth="1" strokeLinecap="round" />
+      <circle cx={cx} cy={cy} r="1.2"
+        className="fill-black/75 dark:fill-white/60" />
+    </svg>
+  );
+}
+
 function getHealth(sliderPct: number, cities: City[], date: Date) {
   const utcH = Math.round((sliderPct / 100) * 23);
   const available = cities.filter(c => {
@@ -69,84 +136,145 @@ function getHealth(sliderPct: number, cities: City[], date: Date) {
   return               { label: `Poor — only ${a}/${t} in hours`,    color: '#dc2626', bg: 'rgba(220,38,38,0.1)', ratio: r  };
 }
 
-const TimelineBar = memo(({ city, isFirstRow, selectedDate }: { city: City; isFirstRow: boolean; selectedDate: Date }) => {
+const TimelineBar = memo(({ city, isFirstRow, selectedDate, index }: { city: City; isFirstRow: boolean; selectedDate: Date; index: number }) => {
   const today = new Date();
   const offsetToday = getOffsetForDate(city.timezone, today);
   const offsetSelected = getOffsetForDate(city.timezone, selectedDate);
   const dstChanged = offsetToday !== offsetSelected;
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
-  // Sunlight Glow logic
+  // Current local hour for golden hour gradient
   const nowHour = new Date().toLocaleTimeString("en-US", { hour: "numeric", hour12: false, timeZone: city.timezone });
   const h = parseInt(nowHour, 10);
   const isCurrentlyWorking = h >= 9 && h < 17;
+  const sunGradient = getSunGradient(isNaN(h) ? 12 : h, isDark);
 
-  const renderSegment = (start: number, end: number, bgColor: string, borderColor?: string, boxShadow?: string) => {
+  const Segment = ({ 
+    start, end, day, shift, bgColor, borderColor, boxShadow, isCurrentlyWorking, isFirstRow 
+  }: { 
+    start: number; end: number; day: number; shift: number; 
+    bgColor: string; borderColor?: string; boxShadow?: string; 
+    isCurrentlyWorking: boolean; isFirstRow: boolean;
+  }) => {
+    const localStart = start - shift + day * 24;
+    const localEnd = end - shift + day * 24;
+    if (localEnd <= 0 || localStart >= 24) return null;
+
+    const left = Math.max(0, localStart) / 24 * 100;
+    const right = Math.min(24, localEnd) / 24 * 100;
+    const width = right - left;
+    if (width <= 0) return null;
+
+    const isWorkingSegment = start === 9 && end === 17;
+    const segmentRef = useRef<HTMLDivElement>(null);
+    const [, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
+
+    return (
+      <div
+        key={`${day}-${start}`}
+        ref={segmentRef}
+        className={`absolute top-0 bottom-0 timeline-segment timeline-bar-segment ${isWorkingSegment && isCurrentlyWorking ? 'timeline-segment-working' : ''}`}
+        style={{ 
+          left: `${left}%`, 
+          width: `${width}%`,
+          background: bgColor,
+          boxShadow: boxShadow,
+          ...(borderColor ? { 
+            borderTop: `1px solid ${borderColor}`, 
+            borderBottom: `1px solid ${borderColor}`, 
+            borderLeft: start === 9 ? `2px solid ${borderColor}` : undefined, 
+            borderRight: end === 17 ? `2px solid ${borderColor}` : undefined 
+          } : {})
+        }}
+      >
+        {/* Task 4: Golden Hour Bar Gradients */}
+        {segmentRef.current?.closest('.timeline-bar-segment') && (
+          <div 
+            className="absolute inset-0 pointer-events-none z-10 flex" 
+            data-overlay="golden-hour"
+            style={{ isolation: 'isolate', position: 'relative' }}
+          >
+            {Array.from({ length: end - start }).map((_, i) => {
+              const h = start + i;
+              const overlay = 
+                h >= 5 && h < 7 ? "rgba(251, 191, 36, 0.08)" :
+                h >= 7 && h < 9 ? "rgba(254, 215, 170, 0.05)" :
+                h >= 17 && h < 19 ? "rgba(251, 146, 60, 0.08)" :
+                h >= 19 && h < 21 ? "rgba(139, 92, 246, 0.08)" : null;
+              
+              if (!overlay) return null;
+              return (
+                <div 
+                  key={h} 
+                  className="h-full flex-1" 
+                  style={{ background: overlay }} 
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {isFirstRow && day === 0 && start === 9 && (
+          <div 
+            style={{
+              position: 'absolute',
+              top: -16,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              fontSize: 9,
+              color: '#b0b0b0',
+              fontFamily: 'Inter, sans-serif',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none'
+            }}
+          >
+            9am — 5pm
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderSegments = (start: number, end: number, bgColor: string, borderColor?: string, boxShadow?: string) => {
     const utcDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: "UTC" }));
     const tzDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: city.timezone }));
     const shift = (tzDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60);
 
-    return [-1, 0, 1].map((day) => {
-      const localStart = start - shift + day * 24;
-      const localEnd = end - shift + day * 24;
-      if (localEnd <= 0 || localStart >= 24) return null;
-
-      const left = Math.max(0, localStart) / 24 * 100;
-      const right = Math.min(24, localEnd) / 24 * 100;
-      const width = right - left;
-      if (width <= 0) return null;
-
-      const isWorkingSegment = start === 9 && end === 17;
-
-      return (
-        <div
-          key={`${day}-${start}`}
-          className={`absolute top-0 bottom-0 timeline-segment ${isWorkingSegment && isCurrentlyWorking ? 'timeline-segment-working' : ''}`}
-          style={{ 
-            left: `${left}%`, 
-            width: `${width}%`,
-            background: bgColor,
-            boxShadow: boxShadow,
-            ...(isWorkingSegment && isCurrentlyWorking ? {} : {}), // Remove inline animation
-            ...(borderColor ? { 
-              borderTop: `1px solid ${borderColor}`, 
-              borderBottom: `1px solid ${borderColor}`, 
-              borderLeft: start === 9 ? `2px solid ${borderColor}` : undefined, 
-              borderRight: end === 17 ? `2px solid ${borderColor}` : undefined 
-            } : {})
-          }}
-        >
-          {isFirstRow && day === 0 && start === 9 && (
-            <div 
-              style={{
-                position: 'absolute',
-                top: -16,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                fontSize: 9,
-                color: '#b0b0b0',
-                fontFamily: 'Inter, sans-serif',
-                whiteSpace: 'nowrap',
-                pointerEvents: 'none'
-              }}
-            >
-              9am — 5pm
-            </div>
-          )}
-        </div>
-      );
-    });
+    return [-1, 0, 1].map((day) => (
+      <Segment 
+        key={day}
+        start={start} end={end} day={day} shift={shift} 
+        bgColor={bgColor} borderColor={borderColor} boxShadow={boxShadow} 
+        isCurrentlyWorking={isCurrentlyWorking} isFirstRow={isFirstRow} 
+      />
+    ));
   };
 
+  const holiday = getHolidayForCity(city.countryCode, selectedDate.toISOString().split('T')[0]);
+
   return (
-    <div className="h-[48px] w-full relative rounded-[8px] overflow-hidden shadow-sm border border-[var(--border-default)] bg-[var(--bg-page)] timeline-bar" style={{ border: '1px solid var(--border-default)' }}>
-      {renderSegment(0, 6, "var(--timeline-night)")}
-      {renderSegment(18, 24, "var(--timeline-night)")}
-      {renderSegment(6, 9, "var(--timeline-shoulder)")}
-      {renderSegment(17, 18, "var(--timeline-shoulder)")}
-      {renderSegment(9, 17, "var(--timeline-working)", undefined, "inset 0 0 0 1px var(--timeline-working-border)")}
-      {renderSegment(9, 17, "var(--timeline-overlap)", undefined, "inset 0 0 0 1px rgba(22,163,74,0.2)")}
-      
-      <div 
+    <div 
+      className={`h-[48px] w-full relative rounded-[8px] overflow-hidden shadow-sm border border-[var(--border-default)] bg-[var(--bg-page)] timeline-bar timeline-bar-animate ${holiday ? 'border-l-2 border-l-amber-400/50' : ''}`} 
+      style={{ border: '1px solid var(--border-default)', animationDelay: `${index * 80}ms` }}
+    >
+      {renderSegments(0, 6, "var(--timeline-night)")}
+      {renderSegments(18, 24, "var(--timeline-night)")}
+      {renderSegments(6, 9, "var(--timeline-shoulder)")}
+      {renderSegments(17, 18, "var(--timeline-shoulder)")}
+      {renderSegments(9, 17, "var(--timeline-working)", undefined, "inset 0 0 0 1px var(--timeline-working-border)")}
+      {renderSegments(9, 17, "var(--timeline-overlap)", undefined, "inset 0 0 0 1px rgba(22,163,74,0.2)")}
+
+      {/* Sun gradient overlay */}
+      {sunGradient !== 'none' && (
+        <div
+          className="absolute inset-0 pointer-events-none z-[3] rounded-[inherit]"
+          style={{ background: sunGradient, transition: 'background 2s ease' }}
+        />
+      )}
+
+      <div
         className="absolute inset-0 pointer-events-none z-[2]"
         style={{ background: 'var(--timeline-gradient)' }}
       />
@@ -168,7 +296,8 @@ const Timeline = ({
   onRemoveCity, 
   onReorderCities,
   meetingPercent,
-  setMeetingPercent 
+  setMeetingPercent,
+  isPresetLoading
 }: TimelineProps) => {
   const [hoverPercent, setHoverPercent] = useState<number | null>(null);
   const [hoverPos, setHoverPos] = useState({ left: 0, top: 0 });
@@ -182,6 +311,7 @@ const Timeline = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const calendarMenuRef = useRef<HTMLDivElement>(null);
   const lastHapticRef = useRef<string>("");
+  const [snapPulse, setSnapPulse] = useState<{ x: number; active: boolean }>({ x: 0, active: false });
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -258,6 +388,37 @@ const Timeline = ({
   const nowPercent = hourToPercent(now.getHours(), now.getMinutes());
   const isFuture = selectedDate.toDateString() !== new Date().toDateString();
   const currentSliderPercent = meetingPercent !== null ? meetingPercent : (isFuture ? 50 : nowPercent);
+
+  const handleSnap = useCallback((val: number) => {
+    if (cities.length === 0) return;
+    const SNAP_THRESHOLD = 3;
+
+    // Collect ALL hours where ratio >= 0.75 (good or perfect)
+    const goodHourPcts: number[] = [];
+    for (let h = 0; h < 24; h++) {
+      const ratio = cities.filter(c => {
+        const lh = getLocalHourAtUTC(h, c.timezone, selectedDate);
+        return lh >= 9 && lh < 17;
+      }).length / cities.length;
+      if (ratio >= 0.75) {
+        goodHourPcts.push((h / 24) * 100);
+      }
+    }
+
+    if (goodHourPcts.length === 0) return;
+
+    const nearest = goodHourPcts.reduce((prev, curr) =>
+      Math.abs(curr - val) < Math.abs(prev - val) ? curr : prev
+    );
+
+    if (Math.abs(nearest - val) <= SNAP_THRESHOLD) {
+      setMeetingPercent(nearest);
+      setSnapPulse({ x: nearest, active: true });
+      setTimeout(() => setSnapPulse(prev => ({ ...prev, active: false })), 600);
+      try { navigator.vibrate?.(30); } catch { /* ignore */ }
+      showToast({ message: 'Snapped to best nearby time', type: 'info' });
+    }
+  }, [cities, selectedDate, setMeetingPercent, showToast]);
   
   const hoverDate = useMemo(() => {
     if (hoverPercent === null) return selectedDate;
@@ -433,6 +594,27 @@ const Timeline = ({
           animation: rollDigit 0.15s ease forwards;
         }
 
+        @keyframes cityAddFlash {
+          0% { background: rgba(22,163,74,0.05); }
+          100% { background: transparent; }
+        }
+        @keyframes cityRowIn {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes cityRowOut {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(20px); opacity: 0; }
+        }
+
+        @keyframes snapPulse {
+          0% { transform: scale(0); opacity: 0.8; }
+          100% { transform: scale(3); opacity: 0; }
+        }
+        .snap-pulse-ring {
+          animation: snapPulse 600ms ease-out forwards;
+        }
+
         .meeting-slider::-webkit-slider-thumb {
           -webkit-appearance: none;
           appearance: none;
@@ -493,42 +675,20 @@ const Timeline = ({
 
         {/* Rows Container */}
         <div className="relative w-full">
-          {/* Overlap Zone */}
-          <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-10 hidden md:block">
-            {blocks.map((block, idx) => {
-              return [-1, 0, 1].map((day) => {
-                const utcDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: "UTC" }));
-                const tzDate = new Date(selectedDate.toLocaleString("en-US", { timeZone: cities[0]?.timezone || "UTC" }));
-                const baseShift = (tzDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60);
-                const localStart = block.start - baseShift + day * 24;
-                const localEnd = block.end - baseShift + day * 24;
-                if (localEnd <= 0 || localStart >= 24) return null;
-                const left = Math.max(0, localStart) / 24 * 100;
-                const right = Math.min(24, localEnd) / 24 * 100;
-                const width = right - left;
-                if (width <= 0) return null;
-                return (
-                  <div
-                    key={`${idx}-${day}`}
-                    className="absolute top-0 bottom-0 bg-[rgba(22,163,74,0.12)] border border-[rgba(22,163,74,0.3)] rounded-[4px]"
-                    style={{ left: `${left}%`, width: `${width}%` }}
-                  >
-                    {idx === 0 && day === 0 && (
-                      <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-[rgba(22,163,74,0.1)] text-[#16a34a] text-[10px] font-semibold font-sans px-[10px] py-[3px] rounded-full whitespace-nowrap">
-                        ✓ Best overlap
-                      </div>
-                    )}
-                  </div>
-                );
-              });
-            })}
-          </div>
 
           {/* Now Indicator & Zenith Needle */}
           <div className="absolute top-0 bottom-0 right-0 w-full md:w-[calc(100%-200px)] pointer-events-none z-20">
+            {snapPulse.active && (
+              <div 
+                className="absolute top-0 bottom-0 w-[1px] flex items-center justify-center pointer-events-none"
+                style={{ left: `${snapPulse.x}%` }}
+              >
+                <div className="w-[10px] h-[10px] rounded-full border-2 border-[var(--text-primary)] snap-pulse-ring" />
+              </div>
+            )}
             <div
-              className="absolute top-0 w-[1px] bg-[var(--text-primary)] transition-all duration-[50ms] ease-linear"
-              style={{ left: `${currentSliderPercent}%`, height: '100%' }}
+              className="absolute top-0 w-[1px] bg-[var(--text-primary)]"
+              style={{ left: `${currentSliderPercent}%`, height: '100%', transition: 'left 150ms cubic-bezier(0.25, 0.46, 0.45, 0.94)' }}
             >
               {!isFuture && meetingPercent === null && (
                 <div className="absolute -top-[3px] left-1/2 -translate-x-1/2">
@@ -554,18 +714,30 @@ const Timeline = ({
               const activeDST = isDSTActive(city.timezone, selectedDate);
               const dayInd = getDayIndicator(city.timezone);
               const meetingTimeStr = getMeetingDateStr(city.timezone) || formatTime(isFuture ? new Date(selectedDate.setHours(12,0,0,0)) : now, city.timezone, timeFormat);
+              
+              const utcH = Math.round((currentSliderPercent / 100) * 23);
+              const localHour = getLocalHourAtUTC(utcH, city.timezone, selectedDate);
+              const isSleeping = localHour >= 22 || localHour < 6;
+
+              const isRemoving = removingIds.has(city.id);
 
               return (
                 <div
                   key={city.id}
-                  className={`flex flex-col md:flex-row w-full md:h-[84px] items-start md:items-center group relative border-b border-[var(--border-default)] py-4 gap-3 md:gap-0 transition-transform duration-200 ease-in-out hover:translate-x-[4px] ${
+                  className={`flex flex-col md:flex-row w-full md:h-[100px] items-start md:items-center group relative border-b border-[var(--border-default)] py-4 gap-3 md:gap-0 city-row ${
                     dragOverIdx === idx ? "border-t-[2px] border-t-[var(--text-primary)]" : ""
                   }`}
                   style={{
-                    animation: removingIds.has(city.id)
-                      ? "slideOut 200ms ease-out forwards"
-                      : (isVisible ? `slideInLeft 350ms cubic-bezier(0.16, 1, 0.3, 1) ${idx * 60}ms both` : "none"),
-                    opacity: draggedIdx === idx ? 0.4 : (isVisible ? 1 : 0),
+                    animation: isRemoving 
+                      ? 'cityRowOut 200ms ease-in forwards' 
+                      : `cityRowIn 300ms cubic-bezier(0.16,1,0.3,1) ${idx * 60}ms forwards, cityAddFlash 1s ease-out ${idx * 60}ms forwards`,
+                    maxHeight: isRemoving ? 0 : 500,
+                    transition: isRemoving ? 'max-height 150ms ease-in, padding 150ms ease-in, opacity 150ms ease-in' : 'opacity 300ms ease',
+                    opacity: isRemoving ? 0 : (isPresetLoading ? 0.5 : (draggedIdx === idx ? 0.4 : (isVisible ? 1 : 0))),
+                    overflow: 'hidden',
+                    paddingTop: isRemoving ? 0 : undefined,
+                    paddingBottom: isRemoving ? 0 : undefined,
+                    borderBottomWidth: isRemoving ? 0 : undefined,
                   }}
                   draggable="true"
                   onDragStart={(e) => { setDraggedIdx(idx); e.dataTransfer.effectAllowed = "move"; }}
@@ -574,59 +746,48 @@ const Timeline = ({
                   onDragEnd={() => { setDraggedIdx(null); setDragOverIdx(null); }}
                 >
                   {/* Left Sidebar - Mobile Responsive Stacking */}
-                  <div className="w-full md:w-[200px] md:min-w-[200px] md:max-w-[200px] shrink-0 h-auto md:h-full pr-[16px] relative flex flex-col justify-center gap-[2px] bg-[var(--bg-surface)] md:bg-transparent py-2 md:py-0 px-3 md:px-0 rounded-md md:rounded-none">
+                  <div className="w-full md:w-[200px] md:min-w-[200px] md:max-w-[200px] shrink-0 h-auto md:h-full pr-[16px] relative flex flex-col justify-center bg-[var(--bg-surface)] md:bg-transparent py-2 md:py-0 px-3 md:px-0 rounded-md md:rounded-none">
                     <div className="hidden md:block absolute left-0 opacity-0 group-hover:opacity-100 cursor-grab text-[var(--text-muted)] p-2 -ml-5">
                       <DragHandleIcon />
                     </div>
 
-                    <div className="flex items-center justify-between md:justify-start gap-1.5 md:pl-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-[24px] text-[16px] leading-none text-center flex-shrink-0">{city.emoji}</span>
-                        <span className="text-[13px] md:text-[14px] font-display font-semibold text-[var(--text-primary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap">
-                          {city.name}
+                    <div className="flex flex-col gap-0.5 min-h-[44px] md:pl-2">
+                      {/* Top row: Clock + Time */}
+                      <div className="flex items-center gap-2">
+                        <div className="hidden md:block">
+                          <MiniClock 
+                            hour={parseInt(meetingTimeStr.split(':')[0]) + (meetingTimeStr.includes('pm') && meetingTimeStr.split(':')[0] !== '12' ? 12 : (meetingTimeStr.includes('am') && meetingTimeStr.split(':')[0] === '12' ? -12 : 0))} 
+                            minute={parseInt(meetingTimeStr.split(':')[1])} 
+                            isSleeping={isSleeping}
+                          />
+                        </div>
+                        <span 
+                          key={meetingTimeStr}
+                          className={`text-[18px] md:text-[20px] font-sans font-bold text-[var(--text-primary)] leading-none tracking-tight tabular-nums digit-pulse ${meetingPercent === null && !isFuture ? "pulse-time" : ""}`}
+                          style={{ opacity: isSleeping ? 0.35 : 1, transition: 'opacity 600ms ease' }}
+                        >
+                          {meetingTimeStr}
                         </span>
                       </div>
-                      
-                      {/* Mobile-only time display next to name */}
-                      <span 
-                        key={`${meetingTimeStr}-${isDragging}`}
-                        className={`md:hidden text-[18px] font-sans font-bold text-[var(--text-primary)] leading-none tracking-tight tabular-nums ${isDragging ? 'roll-animation' : ''}`}
-                      >
-                        {meetingTimeStr}
-                      </span>
-                    </div>
-                    
-                    <div className="hidden md:block pl-[38px] text-[11px] font-sans text-[var(--text-secondary)] leading-none max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap mt-0.5">
-                      {city.country}
-                    </div>
 
-                    <div className="hidden md:block pl-[38px] mt-1.5 mb-1.5">
-                      <AnalogClock timezone={city.timezone} size={22} selectedDate={selectedDate} />
-                    </div>
-
-                    <div className="hidden md:flex pl-[38px] items-center gap-2">
-                      <span 
-                        key={`${meetingTimeStr}-${isDragging}`}
-                        className={`inline-block text-[20px] font-sans font-bold text-[var(--text-primary)] leading-none tracking-tight tabular-nums ${isDragging ? 'roll-animation' : ''} ${meetingPercent === null && !isFuture ? "pulse-time" : ""}`}
-                      >
-                        {meetingTimeStr}
-                      </span>
-                    </div>
-
-                    <div className="pl-[30px] md:pl-[38px] flex flex-wrap items-center gap-1 mt-[4px]">
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400, opacity: 0.6 }}>
-                        {getOffsetString(city.timezone, selectedDate)}
+                      {/* Middle row: Emoji + City Name */}
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <span className="w-[18px] text-[14px] leading-none text-center flex-shrink-0">{city.emoji}</span>
+                        <span className="text-sm font-medium leading-tight text-[var(--text-primary)] truncate">
+                          {city.name}
+                        </span>
+                        {getHolidayForCity(city.countryCode, selectedDate.toISOString().split('T')[0]) && (
+                          <div className="bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-[8px] px-1 py-0.5 rounded-full shrink-0">🎌</div>
+                        )}
                       </div>
-                      {activeDST && (
-                        <div style={{ fontSize: 9, color: 'var(--text-muted)', opacity: 0.5, fontWeight: 400 }}>
-                          DST
-                        </div>
-                      )}
-                      {dayInd && (
-                        <div style={{ fontSize: 9, color: '#d97706', opacity: 0.7 }}>
-                          {dayInd.label}
-                        </div>
-                      )}
+
+                      {/* Bottom row: Subtitle */}
+                      <div className="flex items-center gap-1 mt-0.5" style={{ opacity: isSleeping ? 0.4 : 0.6, transition: 'opacity 600ms ease' }}>
+                        <span className="text-[10px] leading-tight text-black/40 dark:text-white/40 font-medium">
+                          {city.countryCode} · {getOffsetString(city.timezone, selectedDate)}
+                        </span>
+                        {dayInd && <span className="text-[9px] text-amber-600 font-bold ml-1">{dayInd.label}</span>}
+                      </div>
                     </div>
 
                     <button
@@ -644,7 +805,7 @@ const Timeline = ({
                   </div>
 
                   <div className="flex-1 w-full min-w-0 relative flex items-center h-[48px] md:h-full">
-                    <TimelineBar city={city} isFirstRow={idx === 0} selectedDate={selectedDate} />
+                    <TimelineBar city={city} isFirstRow={idx === 0} selectedDate={selectedDate} index={idx} />
                   </div>
                 </div>
               );
@@ -656,35 +817,60 @@ const Timeline = ({
       {/* Scrubber / Slider */}
       {cities.length > 0 && (
         <div className="mt-[24px] flex flex-col items-center w-full md:pl-[200px] relative z-20">
-           <div className="flex items-center gap-3 mb-3">
-             <div className="text-[12px] font-sans text-[var(--text-secondary)]">Drag to find best time</div>
-             {healthScore && (
-               <div 
-                 className="px-[14px] py-[10px] rounded-full text-[12px] font-sans font-semibold shadow-sm"
-                 style={{ backgroundColor: healthScore.bg, color: healthScore.color, transition: 'all 250ms ease' }}
-               >
-                 {healthScore.label}
-               </div>
-             )}
-           </div>
-           
-           <div className="relative w-full h-[20px] md:h-[20px] flex items-center group">
+            <AvailabilitySparkline cities={cities} sliderPercent={currentSliderPercent} />
+            
+            {healthScore && (
+              <div 
+                className="mt-3 px-[14px] py-[10px] rounded-full text-[12px] font-sans font-semibold shadow-sm"
+                style={{ backgroundColor: healthScore.bg, color: healthScore.color, transition: 'background-color 400ms ease, color 400ms ease' }}
+              >
+                {healthScore.label}
+              </div>
+            )}
+            
+            <div className="mt-4 relative w-full h-[20px] md:h-[20px] flex items-center group">
              <div className="absolute left-0 right-0 h-[6px] md:h-[4px] bg-[var(--border-strong)] rounded-full overflow-hidden">
-                <div className="h-full bg-[var(--text-primary)] transition-all duration-75" style={{ width: `${currentSliderPercent}%` }} />
+                <div
+                  className="h-full rounded-full transition-all duration-75"
+                  style={{
+                    width: `${currentSliderPercent}%`,
+                    backgroundImage: 'linear-gradient(90deg, var(--text-primary) 0%, rgba(var(--text-primary-rgb, 36,36,36),0.5) 100%)',
+                  }}
+                />
              </div>
              <input 
                type="range" min="0" max="100" step="0.1" 
                value={currentSliderPercent}
                onMouseDown={() => setIsDragging(true)}
-               onMouseUp={() => setIsDragging(false)}
+               onMouseUp={() => { setIsDragging(false); handleSnap(currentSliderPercent); }}
                onTouchStart={() => setIsDragging(true)}
-               onTouchEnd={() => setIsDragging(false)}
+               onTouchEnd={() => { setIsDragging(false); handleSnap(currentSliderPercent); }}
                onChange={(e) => setMeetingPercent(parseFloat(e.target.value))}
                className="meeting-slider absolute inset-0 w-full h-full opacity-0 z-30 cursor-pointer"
              />
-             <div 
-               className="absolute w-[24px] h-[24px] md:w-[20px] md:h-[20px] rounded-full bg-[var(--text-primary)] border-[2px] border-[var(--bg-page)] shadow-md pointer-events-none transition-all duration-75 group-hover:scale-110 z-20"
-               style={{ left: `calc(${currentSliderPercent}% - 10px)` }}
+             <div
+               className="absolute w-[24px] h-[24px] md:w-[20px] md:h-[20px] rounded-full bg-[var(--text-primary)] border-[2px] border-[var(--bg-page)] shadow-md pointer-events-none group-hover:scale-110 z-20"
+               style={{
+                 left: `calc(${currentSliderPercent}% - 10px)`,
+                 boxShadow: (() => {
+                   if (cities.length === 0) return undefined;
+                   let minDist = Infinity;
+                   for (let hh = 0; hh < 24; hh++) {
+                     const ratio = cities.filter(c => {
+                       const lh = getLocalHourAtUTC(hh, c.timezone, selectedDate);
+                       return lh >= 9 && lh < 17;
+                     }).length / cities.length;
+                     if (ratio >= 0.75) {
+                       const pct = (hh / 24) * 100;
+                       minDist = Math.min(minDist, Math.abs(pct - currentSliderPercent));
+                     }
+                   }
+                   return minDist <= 2
+                     ? '0 0 0 3px rgba(22,163,74,0.2), 0 0 8px rgba(22,163,74,0.15)'
+                     : undefined;
+                 })(),
+                 transition: 'left 75ms linear, box-shadow 200ms ease, transform 150ms ease',
+               }}
              />
            </div>
            

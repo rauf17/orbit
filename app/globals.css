@@ -70,6 +70,11 @@ html {
   transition: none !important;
 }
 
+[data-overlay="golden-hour"] {
+  mix-blend-mode: normal;
+  isolation: isolate;
+}
+
 body {
   background: var(--bg-page);
   color: var(--text-primary);
@@ -123,6 +128,43 @@ h1, h2, h3, h4, h5, h6 {
 @keyframes workingGlowDark {
   0%, 100% { background: var(--timeline-working); }
   50% { background: rgba(22,163,74,0.12); }
+}
+
+@keyframes rowEntrance {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.city-row {
+  animation: rowEntrance 300ms ease-out both;
+}
+
+@keyframes digitPulse {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+.digit-pulse {
+  animation: digitPulse 200ms ease-out forwards;
+}
+
+@keyframes heroEntrance {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hero-heading { animation: heroEntrance 500ms ease-out both; }
+.hero-subtext  { animation: heroEntrance 500ms ease-out 100ms both; }
+.hero-buttons  { animation: heroEntrance 500ms ease-out 200ms both; }
+
+@keyframes barShimmer {
+  from { opacity: 0.3; }
+  to   { opacity: 1; }
+}
+
+.timeline-bar-animate {
+  animation: barShimmer 400ms ease-out both;
 }
 
 .hide-scrollbar::-webkit-scrollbar {

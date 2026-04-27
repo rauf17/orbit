@@ -97,7 +97,7 @@ export default function Starfield() {
             top: `${10 + i * 15}%`,
             width: 60,
             height: 1,
-            background: 'linear-gradient(90deg, rgba(255,255,255,0.8), transparent)',
+            backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0.8), transparent)',
             borderRadius: 1,
             animation: `shootingStar ${8 + i * 4}s ${i * 6}s linear infinite`,
           }} />

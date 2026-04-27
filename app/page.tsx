@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import SplashScreen from "../components/SplashScreen";
 import Navbar from "../components/Navbar";
@@ -47,6 +47,21 @@ function getLocalHourAtUTC(utcHour: number, tz: string, date: Date): number {
     const h = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10);
     return isNaN(h) ? 0 : h === 24 ? 0 : h;
   } catch { return 0; }
+}
+
+function getOverlapWindow(timezones: string[], date: Date): string {
+  const hours = getOverlapHours(timezones, date);
+  if (hours.length === 0) return '';
+
+  const formatH = (h: number) => {
+    if (h === 0) return '12am';
+    if (h === 12) return '12pm';
+    return h > 12 ? `${h - 12}pm` : `${h}am`;
+  };
+
+  const first = Math.min(...hours);
+  const last = Math.max(...hours);
+  return `${formatH(first)}\u2013${formatH(last + 1)} UTC (${hours.length}h)`;
 }
 
 function findBestTime(cities: City[], date: Date): { percent: number; maxScore: number; bestHour: number; perfect: boolean } {
@@ -96,6 +111,7 @@ export default function Home() {
   const [isSavingTeam, setIsSavingTeam]     = useState(false);
   const [teamName, setTeamName]             = useState("");
   const [showShortcuts, setShowShortcuts]   = useState(false);
+  const [isPresetLoading, setIsPresetLoading] = useState(false);
   
   const { now } = useClock();
   const { theme, toggleTheme } = useTheme();
@@ -232,23 +248,26 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [handleShare, toggleTimeFormat, handleGoldenWindow, toggleTheme]);
 
-  const nextOverlap = useMemo(() => {
+  const isFuture = selectedDate.toDateString() !== new Date().toDateString();
+  const nowPercent = ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * 100;
+
+  // Single source of truth for overlap — used by both stats row and health badge
+  const overlapHours = useMemo(
+    () => getOverlapHours(selectedCities.map(c => c.timezone), selectedDate),
+    [selectedCities, selectedDate]
+  );
+  const hasOverlap = overlapHours.length > 0;
+
+  const headerStat = useMemo(() => {
     if (selectedCities.length === 0) return null;
-    const overlaps = getOverlapHours(selectedCities.map((c) => c.timezone), selectedDate);
-    if (overlaps.length === 0) return null;
-    const d = new Date(selectedDate);
-    const baseShift = (new Date(d.toLocaleString("en-US", { timeZone: selectedCities[0].timezone })).getTime() - new Date(d.toLocaleString("en-US")).getTime()) / 3600000;
-    const localOverlaps = overlaps.map((h) => { let lh = h - baseShift; if (lh < 0) lh += 24; if (lh >= 24) lh -= 24; return lh; }).sort((a, b) => a - b);
-    const curH = (selectedDate.toDateString() === new Date().toDateString()) ? now.getHours() + now.getMinutes() / 60 : 12;
-    const targetH = localOverlaps.find((h) => h >= curH) ?? localOverlaps[0];
-    const td = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
-    td.setTime(td.getTime() + Math.round(targetH * 3600000));
-    if (targetH < curH && selectedDate.toDateString() === new Date().toDateString()) td.setDate(td.getDate() + 1);
-    return formatTime(td, Intl.DateTimeFormat().resolvedOptions().timeZone, timeFormat);
-  }, [selectedCities, now, timeFormat, selectedDate]);
+    if (hasOverlap) {
+      const win = getOverlapWindow(selectedCities.map(c => c.timezone), selectedDate);
+      return { text: `Overlap: ${win}`, color: '#16a34a', bold: true };
+    }
+    return { text: 'No overlapping hours', color: 'var(--text-muted)', bold: false };
+  }, [selectedCities, hasOverlap, selectedDate]);
 
   const atMax = selectedCities.length >= maxCities;
-  const isFuture = selectedDate.toDateString() !== new Date().toDateString();
   const currentCitiesMatchPreset = presets.some(p => p.cityIds.join(',') === selectedCities.map(c => c.id).join(','));
 
   if (!isInitialized) return null;
@@ -315,7 +334,7 @@ export default function Home() {
 
         <main className="relative z-10 w-full max-w-[1100px] mx-auto px-[24px] pt-[40px] pb-[80px]">
           <section className="flex flex-col" style={{ position: "relative", zIndex: 100, isolation: "isolate" }}>
-            <h1 className="text-[32px] md:text-[48px] font-display font-semibold leading-[1.1] tracking-[-0.5px]">
+            <h1 className="text-[32px] md:text-[48px] font-display font-semibold leading-[1.1] tracking-[-0.5px] hero-heading">
               {["Plan", "Across\n", "Time", "Zones."].map((word, i) => {
                 const label = word.replace("\n", "");
                 return (
@@ -331,24 +350,35 @@ export default function Home() {
               })}
             </h1>
 
-            <p className="mt-[12px] text-[16px] font-sans text-[var(--text-secondary)] max-w-[480px] min-h-[24px]" style={{ opacity: appReady ? 1 : 0, transition: "opacity 200ms ease 580ms" }}>
+            <p className="mt-[12px] text-[16px] font-sans text-[var(--text-secondary)] max-w-[480px] min-h-[24px] hero-subtext" style={{ opacity: appReady ? 1 : 0, transition: "opacity 200ms ease 580ms" }}>
               {subtitle}{!subtitleDone && appReady && <span className="cursor-blink">|</span>}
             </p>
 
-            <div className="mt-[20px] flex flex-col md:flex-row items-stretch md:items-center gap-[12px] opacity-0" style={{ animation: appReady ? "slideUpFade8 350ms ease 800ms forwards" : "none", position: "relative", zIndex: 9999, isolation: "isolate" }}>
+            <div className="mt-[20px] flex flex-col md:flex-row items-stretch md:items-center gap-[12px] opacity-0 hero-buttons" style={{ animation: appReady ? "slideUpFade8 350ms ease 800ms forwards" : "none", position: "relative", zIndex: 1000, isolation: "isolate" }}>
               <CitySearch onAddCity={addCity} selectedCities={selectedCities} maxCities={maxCities} now={now} timeFormat={timeFormat} />
-              <button onClick={() => { setBestAnimating(true); setTimeout(() => setBestAnimating(false), 800); handleGoldenWindow(); }}
-                style={{ transform: bestAnimating ? 'scale(1.05)' : 'scale(1)', transition: 'transform 300ms ease' }}
-                className="flex items-center justify-center gap-[6px] bg-[var(--bg-page)] shadow-sm border border-[var(--border-default)] rounded-[8px] px-[16px] py-[10px] text-[14px] font-sans font-semibold hover:shadow-md hover:-translate-y-[2px] active:translate-y-0 active:scale-[0.98] transition-all duration-150"
-              >
-                <span className="text-[var(--text-primary)] flex items-center justify-center"><OrbitIcon size={14} speed={bestAnimating ? 1 : 3} /></span> Best Time
-              </button>
-              {goldenBadge && <div className="absolute top-full left-0 mt-[8px] whitespace-nowrap text-[12px] font-sans text-[#16a34a] bg-[rgba(22,163,74,0.1)] px-[10px] py-[4px] rounded-[6px]" style={{ animation: 'popInLeft 200ms ease' }}>{goldenBadge}</div>}
+              
+              <div className="relative group/best-wrapper">
+                <button 
+                  onClick={() => { setBestAnimating(true); setTimeout(() => setBestAnimating(false), 800); handleGoldenWindow(); }}
+                  style={{ transform: bestAnimating ? 'scale(1.05)' : 'scale(1)', transition: 'transform 300ms ease' }}
+                  className="w-full flex items-center justify-center gap-[6px] bg-[var(--bg-page)] shadow-sm border border-[var(--border-default)] rounded-[8px] px-[16px] py-[10px] text-[14px] font-sans font-semibold hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.98] transition-all duration-200"
+                >
+                  <span className="text-[var(--text-primary)] flex items-center justify-center"><OrbitIcon size={14} speed={bestAnimating ? 1 : 3} /></span> Best Time
+                </button>
+                {goldenBadge && (
+                  <div 
+                    className="absolute top-[calc(100%+8px)] left-0 whitespace-nowrap text-[12px] font-sans font-medium text-[#16a34a] bg-[rgba(22,163,74,0.1)] px-[12px] py-[6px] rounded-[8px] z-50 shadow-sm border border-[rgba(22,163,74,0.2)]" 
+                    style={{ animation: 'popInLeft 200ms ease' }}
+                  >
+                    {goldenBadge}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mt-[16px] flex items-center flex-wrap gap-[8px] text-[11px] md:text-[12px] font-sans opacity-0 group" style={{ animation: appReady ? "fadeIn 300ms ease 1000ms forwards" : "none", color: "var(--text-secondary)" }}>
               <span><span style={{ color: atMax ? "#dc2626" : "var(--text-primary)", fontWeight: 600 }}>{selectedCities.length}</span><span style={{ color: "var(--text-secondary)" }}>/6 cities</span></span>
-              <span>·</span><span>{nextOverlap ? `Next overlap: ${nextOverlap}` : "No overlapping hours"}</span>
+              {headerStat && <><span>·</span><span key={headerStat.text} style={{ color: headerStat.color, fontWeight: headerStat.bold ? 600 : 400, transition: 'color 300ms ease', animation: 'fadeIn 300ms ease' }}>{headerStat.text}</span></>}
               <span>·</span><div className="flex items-center gap-[6px]"><div className="relative w-[6px] h-[6px] rounded-full bg-[var(--success)]">{!isFuture && <div className="absolute inset-0 rounded-full bg-[var(--success)] opacity-0" style={{ animation: "pulseSlow 2s infinite" }} />}</div>{isFuture ? "Static view" : "Updated live"}</div>
               {selectedCities.length > 0 && !currentCitiesMatchPreset && <><span className="mx-1 opacity-0 group-hover:opacity-100 transition-opacity">·</span><button onClick={() => setIsSavingTeam(true)} className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] font-sans text-[var(--text-muted)] hover:text-[var(--text-primary)] underline underline-offset-2">Save as team preset</button></>}
             </div>
@@ -356,7 +386,16 @@ export default function Home() {
             {(presets.length > 0 || isSavingTeam) && (
               <div className="mt-4 flex items-center gap-3 overflow-x-auto pb-2 hide-scrollbar opacity-0" style={{ animation: "fadeIn 300ms ease 1100ms forwards" }}>
                 {presets.map(preset => (
-                  <div key={preset.id} onClick={() => setCitiesByIds(preset.cityIds)} className={`flex items-center gap-2 px-3 py-2 min-h-[32px] rounded-full border text-[11px] font-sans font-semibold transition-all cursor-pointer whitespace-nowrap group/pill ${preset.cityIds.join(',') === selectedCities.map(c => c.id).join(',') ? 'border-[var(--border-strong)] bg-[var(--bg-surface)]' : 'border-[var(--border-default)] bg-transparent hover:bg-[var(--bg-surface)]'}`}>
+                  <div
+                    key={preset.id}
+                    onClick={() => {
+                      setIsPresetLoading(true);
+                      setCitiesByIds(preset.cityIds);
+                      setTimeout(() => setIsPresetLoading(false), 300);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 min-h-[32px] rounded-full border text-[11px] font-sans font-semibold transition-all cursor-pointer whitespace-nowrap group/pill ${preset.cityIds.join(',') === selectedCities.map(c => c.id).join(',') ? 'border-[var(--border-strong)] bg-[var(--bg-surface)]' : 'border-[var(--border-default)] bg-transparent hover:bg-[var(--bg-surface)]'}`}
+                    style={{ transition: 'opacity 300ms ease' }}
+                  >
                     <span>{preset.name}</span><button onClick={(e) => { e.stopPropagation(); deletePreset(preset.id); }} className="opacity-0 group-hover/pill:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[#dc2626]">×</button>
                   </div>
                 ))}
@@ -372,7 +411,27 @@ export default function Home() {
                 <h2 className="text-[14px] font-display font-semibold relative inline-block">Your Timeline<div className="absolute -bottom-[13px] left-0 h-[1px] bg-[var(--border-strong)]" style={{ animation: appReady ? "expandLine 400ms ease 1400ms forwards" : "none", width: 0 }} /></h2>
                 <div className="flex items-center gap-4">
                    <div className="relative">
-                      {!showDatePicker ? <button onClick={() => setShowDatePicker(true)} className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[6px] shadow-sm text-[11px] font-sans font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all">📅 {isFuture ? selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : "Today"}</button> : <input type="date" autoFocus value={selectedDate.toISOString().split('T')[0]} onChange={(e) => { setSelectedDate(new Date(e.target.value)); setShowDatePicker(false); }} onBlur={() => setShowDatePicker(false)} className="px-2.5 py-1.5 bg-[var(--bg-page)] border border-[var(--border-strong)] rounded-[6px] shadow-sm text-[11px] font-sans font-semibold outline-none min-w-[140px]" />}
+                      {!showDatePicker
+                        ? <button onClick={() => setShowDatePicker(true)} className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[6px] shadow-sm text-[11px] font-sans font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all">📅 {isFuture ? selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : "Today"}</button>
+                        : <input
+                            type="date"
+                            autoFocus
+                            value={selectedDate.toISOString().split('T')[0]}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                const [year, month, day] = e.target.value.split('-').map(Number);
+                                const d = new Date(year, month - 1, day);
+                                if (!isNaN(d.getTime())) setSelectedDate(d);
+                              } else {
+                                // Fallback to today if cleared to prevent crash
+                                setSelectedDate(new Date());
+                              }
+                            }}
+                            onBlur={() => setShowDatePicker(false)}
+                            onKeyDown={(e) => { if (e.key === 'Escape') setShowDatePicker(false); }}
+                            className="px-2.5 py-1.5 bg-[var(--bg-page)] border border-[var(--border-strong)] rounded-[6px] shadow-sm text-[11px] font-sans font-semibold outline-none min-w-[140px]"
+                          />
+                      }
                    </div>
                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                     <div className="text-[12px] font-sans text-[var(--text-secondary)] time-display">{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(selectedDate)} · {formatTime(isFuture ? new Date(selectedDate.setHours(12,0,0,0)) : now, "UTC", timeFormat)} UTC</div>
@@ -380,7 +439,7 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-              <div className="mt-[16px]"><Timeline cities={selectedCities} now={now} selectedDate={selectedDate} timeFormat={timeFormat} onRemoveCity={handleRemoveCity} onReorderCities={reorderCities} meetingPercent={meetingPercent} setMeetingPercent={setMeetingPercent} /></div>
+              <div className="mt-[16px]"><Timeline cities={selectedCities} now={now} selectedDate={selectedDate} timeFormat={timeFormat} onRemoveCity={handleRemoveCity} onReorderCities={reorderCities} meetingPercent={meetingPercent} setMeetingPercent={setMeetingPercent} isPresetLoading={isPresetLoading} /></div>
               <div style={{ display: "flex", gap: 20, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
                 {[{ color: "var(--timeline-night)", label: "Deep night" }, { color: "var(--timeline-shoulder)", label: "Morning / Evening" }, { color: "var(--timeline-working)", label: "Working hours", border: true }, { color: "var(--timeline-overlap)", label: "Best overlap" }].map((item) => (
                   <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 12, height: 12, borderRadius: 3, background: item.color, border: item.border ? "1px solid var(--border-strong)" : "1px solid var(--border-default)", flexShrink: 0 }} /><span style={{ fontSize: 12, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", whiteSpace: "nowrap" }}>{item.label}</span></div>
@@ -402,7 +461,7 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* Shortcuts Modal (Task 5) */}
+      {/* Shortcuts Modal */}
       {showShortcuts && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowShortcuts(false)} />
@@ -423,7 +482,19 @@ export default function Home() {
               ].map(s => (
                 <div key={s.key} className="flex items-center justify-between">
                   <span className="text-[13px] font-sans text-[var(--text-secondary)]">{s.desc}</span>
-                  <kbd className="px-2 py-1 bg-[#f5f5f5] dark:bg-[#1c1c20] border border-[var(--border-default)] rounded-[4px] text-[11px] font-mono font-semibold text-[var(--text-primary)] min-w-[32px] text-center">{s.key}</kbd>
+                  <kbd style={{
+                    background: 'var(--bg-elevated)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-strong)',
+                    borderRadius: 4,
+                    padding: '3px 8px',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    fontFamily: 'ui-monospace, monospace',
+                    minWidth: 24,
+                    textAlign: 'center',
+                    display: 'inline-block',
+                  }}>{s.key}</kbd>
                 </div>
               ))}
             </div>

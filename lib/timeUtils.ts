@@ -25,6 +25,22 @@ export function formatDate(date: Date, timezone: string): string {
   }).format(date);
 }
 
+export function getLocalHourAtUTC(utcHour: number, tz: string, date: Date = new Date()): number {
+  try {
+    const d = new Date(date);
+    d.setUTCHours(utcHour, 0, 0, 0);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      hour12: false,
+      timeZone: tz,
+    }).formatToParts(d);
+    const h = parseInt(
+      parts.find(p => p.type === 'hour')?.value ?? '0', 10
+    );
+    return isNaN(h) ? 0 : h === 24 ? 0 : h;
+  } catch { return 0; }
+}
+
 export function getHourInZone(timezone: string, date: Date = new Date()): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,

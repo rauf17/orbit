@@ -229,11 +229,18 @@ export default function CitySearch({
       >
         <PlusIcon />
         <span>Add City</span>
-        {!disabled && !isOpen && (
-          <span className="text-[10px] text-[var(--text-muted)] font-normal ml-1 hidden md:inline">
-            (press /)
-          </span>
-        )}
+            <kbd style={{
+              background: 'var(--bg-elevated)',
+              color: 'var(--text-muted)',
+              border: '1px solid var(--border-default)',
+              borderRadius: 4,
+              padding: '1px 5px',
+              fontSize: 10,
+              fontWeight: 500,
+              fontFamily: 'ui-monospace, monospace',
+              marginLeft: 4,
+              display: 'inline-block',
+            }}>/</kbd>
       </button>
 
       {/* Dropdown Popover */}

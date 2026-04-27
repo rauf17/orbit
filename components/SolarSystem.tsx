@@ -67,22 +67,22 @@ export default function SolarSystem() {
         aria-hidden="true"
         className="no-theme-transition"
         style={{
-          position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
+          position: 'fixed', inset: 0, zIndex: -1, pointerEvents: 'none',
           overflow: 'hidden', display: 'flex', alignItems: 'center',
           justifyContent: 'center', transform: 'translateX(30%)',
-          opacity,
+          opacity, isolation: 'isolate',
         }}
       >
         {/* Sun glow */}
         <div className="solar-sun" style={{
           position: 'absolute', width: 80, height: 80, borderRadius: '50%',
-          background: `radial-gradient(circle, ${sunColor} 0%, ${sunColor.replace(/[\d.]+\)$/, '0.08)')} 50%, transparent 70%)`,
+          backgroundImage: `radial-gradient(circle, ${sunColor} 0%, ${sunColor.replace(/[\d.]+\)$/, '0.08)')} 50%, transparent 70%)`,
           animation: 'sunPulse 4s ease-in-out infinite', filter: 'blur(8px)',
         }} />
         {/* Sun core */}
         <div style={{
           position: 'absolute', width: 16, height: 16, borderRadius: '50%',
-          background: `radial-gradient(circle, ${sunColor}, transparent)`,
+          backgroundImage: `radial-gradient(circle, ${sunColor}, transparent)`,
           filter: 'blur(2px)',
         }} />
         {/* Ring 1 — 180px */}
