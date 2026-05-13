@@ -219,28 +219,31 @@ export default function CitySearch({
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
         title={disabled ? "Max 6 cities" : undefined}
-        className={`flex items-center gap-2 bg-[var(--bg-page)] rounded-[8px] px-4 py-2.5 shadow-sm border border-[var(--border-default)] text-[14px] font-sans font-semibold text-[var(--text-primary)] transition-all duration-150 w-full md:w-auto justify-center
+        className={`flex items-center gap-3 bg-white rounded-[12px] px-5 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.05)] border border-gray-100/50 text-[14px] font-sans font-medium text-[var(--text-primary)] transition-all duration-300 w-full md:w-[280px] justify-start group
           ${
             disabled
               ? "opacity-40 cursor-not-allowed"
-              : "hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:shadow-sm"
+              : "hover:shadow-[0_15px_50px_rgba(0,0,0,0.08)] hover:-translate-y-[2px] active:translate-y-0 active:scale-[0.98]"
           }
         `}
       >
-        <PlusIcon />
-        <span>Add City</span>
-            <kbd style={{
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-muted)',
-              border: '1px solid var(--border-default)',
-              borderRadius: 4,
-              padding: '1px 5px',
-              fontSize: 10,
-              fontWeight: 500,
-              fontFamily: 'ui-monospace, monospace',
-              marginLeft: 4,
-              display: 'inline-block',
-            }}>/</kbd>
+        <div className="text-gray-400 group-hover:text-[#FF8C00] transition-colors">
+          <SearchIcon />
+        </div>
+        <span className="text-gray-400 group-hover:text-gray-500 transition-colors">Search city...</span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <kbd style={{
+            background: 'rgba(0,0,0,0.03)',
+            color: 'rgba(0,0,0,0.3)',
+            border: '1px solid rgba(0,0,0,0.05)',
+            borderRadius: 6,
+            padding: '2px 6px',
+            fontSize: 10,
+            fontWeight: 600,
+            fontFamily: 'ui-monospace, monospace',
+            display: 'inline-block',
+          }}>/</kbd>
+        </div>
       </button>
 
       {/* Dropdown Popover */}

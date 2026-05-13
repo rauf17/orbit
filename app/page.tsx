@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import SplashScreen from "../components/SplashScreen";
@@ -67,7 +68,7 @@ function getOverlapWindow(timezones: string[], date: Date): string {
 function findBestTime(cities: City[], date: Date): { percent: number; maxScore: number; bestHour: number; perfect: boolean } {
   let bestScore = -1;
   let bestHour = 9;
-  
+
   for (let utcH = 0; utcH < 24; utcH++) {
     let score = 0;
     cities.forEach(city => {
@@ -76,43 +77,43 @@ function findBestTime(cities: City[], date: Date): { percent: number; maxScore: 
       else if (localH >= 9 && localH < 17) score += 2;
       else if (localH === 8 || (localH >= 17 && localH < 19)) score += 1;
     });
-    
+
     if (score > bestScore) {
       bestScore = score;
       bestHour = utcH;
     }
   }
-  
+
   let perfect = true;
   cities.forEach(city => {
     const h = getLocalHourAtUTC(bestHour, city.timezone, date);
     if (h < 9 || h >= 17) perfect = false;
   });
 
-  return { 
-    percent: (bestHour / 24) * 100, 
-    maxScore: bestScore, 
+  return {
+    percent: (bestHour / 24) * 100,
+    maxScore: bestScore,
     bestHour,
-    perfect 
+    perfect
   };
 }
 
 export default function Home() {
-  const [appReady, setAppReady]             = useState(false);
+  const [appReady, setAppReady] = useState(false);
   const [meetingPercent, setMeetingPercent] = useState<number | null>(null);
-  const [sharedTime, setSharedTime]         = useState<string | null>(null);
-  const [sharedNote, setSharedNote]         = useState<string | null>(null);
+  const [sharedTime, setSharedTime] = useState<string | null>(null);
+  const [sharedNote, setSharedNote] = useState<string | null>(null);
   const [showNoteBanner, setShowNoteBanner] = useState(true);
-  const [goldenBadge, setGoldenBadge]       = useState<string | null>(null);
+  const [goldenBadge, setGoldenBadge] = useState<string | null>(null);
   const [shareAnimating, setShareAnimating] = useState(false);
-  const [bestAnimating, setBestAnimating]   = useState(false);
-  const [selectedDate, setSelectedDate]     = useState<Date>(new Date());
+  const [bestAnimating, setBestAnimating] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [isSavingTeam, setIsSavingTeam]     = useState(false);
-  const [teamName, setTeamName]             = useState("");
-  const [showShortcuts, setShowShortcuts]   = useState(false);
+  const [isSavingTeam, setIsSavingTeam] = useState(false);
+  const [teamName, setTeamName] = useState("");
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [isPresetLoading, setIsPresetLoading] = useState(false);
-  
+
   const { now } = useClock();
   const { theme, toggleTheme } = useTheme();
   const { showToast } = useToast();
@@ -210,7 +211,7 @@ export default function Home() {
         setGoldenBadge(perfect ? `✓ Perfect overlap at ${ts} UTC — everyone available!` : `✓ Best window: ${ts} UTC (${available}/${selectedCities.length} available)`);
         showToast({ message: `Best time: ${ts} UTC`, type: "success" });
         if (perfect && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-          try { navigator.vibrate([100, 50, 100, 50, 100]); } catch (e) {}
+          try { navigator.vibrate([100, 50, 100, 50, 100]); } catch (e) { }
         }
         setTimeout(() => setGoldenBadge(null), 4000);
       }
@@ -290,30 +291,12 @@ export default function Home() {
           @keyframes drift1        { from { transform:translate(0,0); } to { transform:translate(30px,30px); } }
           @keyframes drift2        { from { transform:translate(0,0); } to { transform:translate(-20px,-20px); } }
           @keyframes noteBannerIn  { from { transform:translateY(-100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
-          [data-theme="dark"] .ambient-orbs { display:none !important; }
-          .page-ambient-gradient {
-            position:fixed; inset:0; z-index:0; pointer-events:none;
-            background: radial-gradient(ellipse 800px 600px at var(--mx,50%) var(--my,30%), rgba(94,106,210,0.05) 0%, transparent 70%);
-          }
-          [data-theme="dark"] .page-ambient-gradient {
-            background: radial-gradient(ellipse 800px 600px at var(--mx,50%) var(--my,30%), rgba(94,106,210,0.1) 0%, transparent 70%);
-          }
-          .solar-system-wrapper {
-             position:fixed; inset:0; z-index:0; pointer-events:none;
-             display: flex; align-items: center; justify-content: center;
-             transition: all 500ms ease;
-          }
-          @media (max-width: 768px) {
-            .solar-system-wrapper { transform: scale(0.6); opacity: 0.5; }
-          }
         `}</style>
 
-        <div className="page-ambient-gradient" aria-hidden="true" />
-
-        <Navbar 
-          timeFormat={timeFormat} 
-          toggleTimeFormat={toggleTimeFormat} 
-          onShare={handleShare} 
+        <Navbar
+          timeFormat={timeFormat}
+          toggleTimeFormat={toggleTimeFormat}
+          onShare={handleShare}
           isShareAnimating={shareAnimating}
           onShowShortcuts={() => setShowShortcuts(true)}
         />
@@ -334,6 +317,25 @@ export default function Home() {
 
         <main className="relative z-10 w-full max-w-[1100px] mx-auto px-[24px] pt-[40px] pb-[80px]">
           <section className="flex flex-col" style={{ position: "relative", zIndex: 100, isolation: "isolate" }}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={appReady ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className="mb-4"
+            >
+              <motion.span
+                whileHover={{ y: -2 }}
+                transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                className="inline-block text-[14px] md:text-[16px] font-display font-bold tracking-[0.4em] uppercase text-[#FF8C00] cursor-default"
+                style={{
+                  textShadow: "0 0 15px rgba(255, 165, 0, 0.4)",
+                  fontFamily: "var(--font-display, 'Cal Sans', sans-serif)"
+                }}
+              >
+                ORBIT
+              </motion.span>
+            </motion.div>
+
             <h1 className="text-[32px] md:text-[48px] font-display font-semibold leading-[1.1] tracking-[-0.5px] hero-heading">
               {["Plan", "Across\n", "Time", "Zones."].map((word, i) => {
                 const label = word.replace("\n", "");
@@ -354,27 +356,39 @@ export default function Home() {
               {subtitle}{!subtitleDone && appReady && <span className="cursor-blink">|</span>}
             </p>
 
-            <div className="mt-[20px] flex flex-col md:flex-row items-stretch md:items-center gap-[12px] opacity-0 hero-buttons" style={{ animation: appReady ? "slideUpFade8 350ms ease 800ms forwards" : "none", position: "relative", zIndex: 1000, isolation: "isolate" }}>
+            <motion.div
+              initial={{ opacity: 0, y: 50, filter: "blur(10px)" }}
+              animate={appReady ? { opacity: 1, y: 0, filter: "blur(0px)" } : {}}
+              transition={{ duration: 1.2, ease: "easeOut", delay: 0.8 }}
+              className="mt-[20px] flex flex-col md:flex-row items-stretch md:items-center gap-[12px]"
+              style={{ position: "relative", zIndex: 1000, isolation: "isolate" }}
+            >
               <CitySearch onAddCity={addCity} selectedCities={selectedCities} maxCities={maxCities} now={now} timeFormat={timeFormat} />
-              
+
               <div className="relative group/best-wrapper">
-                <button 
+                <button
                   onClick={() => { setBestAnimating(true); setTimeout(() => setBestAnimating(false), 800); handleGoldenWindow(); }}
-                  style={{ transform: bestAnimating ? 'scale(1.05)' : 'scale(1)', transition: 'transform 300ms ease' }}
-                  className="w-full flex items-center justify-center gap-[6px] bg-[var(--bg-page)] shadow-sm border border-[var(--border-default)] rounded-[8px] px-[16px] py-[10px] text-[14px] font-sans font-semibold hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.98] transition-all duration-200"
+                  style={{
+                    transform: bestAnimating ? 'scale(1.05)' : 'scale(1)',
+                    transition: 'transform 300ms ease',
+                    background: "linear-gradient(135deg, #FF8C00 0%, #FFA500 100%)",
+                    color: "white",
+                    border: "none"
+                  }}
+                  className="w-full flex items-center justify-center gap-[6px] shadow-lg hover:shadow-xl hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.98] transition-all duration-200 rounded-[8px] px-[16px] py-[10px] text-[14px] font-sans font-bold"
                 >
-                  <span className="text-[var(--text-primary)] flex items-center justify-center"><OrbitIcon size={14} speed={bestAnimating ? 1 : 3} /></span> Best Time
+                  <span className="text-white flex items-center justify-center"><OrbitIcon size={14} speed={bestAnimating ? 1 : 3} /></span> Best Time
                 </button>
                 {goldenBadge && (
-                  <div 
-                    className="absolute top-[calc(100%+8px)] left-0 whitespace-nowrap text-[12px] font-sans font-medium text-[#16a34a] bg-[rgba(22,163,74,0.1)] px-[12px] py-[6px] rounded-[8px] z-50 shadow-sm border border-[rgba(22,163,74,0.2)]" 
+                  <div
+                    className="absolute top-[calc(100%+8px)] left-0 whitespace-nowrap text-[12px] font-sans font-medium text-[#16a34a] bg-[rgba(22,163,74,0.1)] px-[12px] py-[6px] rounded-[8px] z-50 shadow-sm border border-[rgba(22,163,74,0.2)]"
                     style={{ animation: 'popInLeft 200ms ease' }}
                   >
                     {goldenBadge}
                   </div>
                 )}
               </div>
-            </div>
+            </motion.div>
 
             <div className="mt-[16px] flex items-center flex-wrap gap-[8px] text-[11px] md:text-[12px] font-sans opacity-0 group" style={{ animation: appReady ? "fadeIn 300ms ease 1000ms forwards" : "none", color: "var(--text-secondary)" }}>
               <span><span style={{ color: atMax ? "#dc2626" : "var(--text-primary)", fontWeight: 600 }}>{selectedCities.length}</span><span style={{ color: "var(--text-secondary)" }}>/6 cities</span></span>
@@ -410,31 +424,31 @@ export default function Home() {
               <div className="flex items-end justify-between border-b border-[var(--border-default)] pb-[12px] opacity-0 relative" style={{ animation: appReady ? "fadeIn 300ms ease 1100ms forwards" : "none" }}>
                 <h2 className="text-[14px] font-display font-semibold relative inline-block">Your Timeline<div className="absolute -bottom-[13px] left-0 h-[1px] bg-[var(--border-strong)]" style={{ animation: appReady ? "expandLine 400ms ease 1400ms forwards" : "none", width: 0 }} /></h2>
                 <div className="flex items-center gap-4">
-                   <div className="relative">
-                      {!showDatePicker
-                        ? <button onClick={() => setShowDatePicker(true)} className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[6px] shadow-sm text-[11px] font-sans font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all">📅 {isFuture ? selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : "Today"}</button>
-                        : <input
-                            type="date"
-                            autoFocus
-                            value={selectedDate.toISOString().split('T')[0]}
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                const [year, month, day] = e.target.value.split('-').map(Number);
-                                const d = new Date(year, month - 1, day);
-                                if (!isNaN(d.getTime())) setSelectedDate(d);
-                              } else {
-                                // Fallback to today if cleared to prevent crash
-                                setSelectedDate(new Date());
-                              }
-                            }}
-                            onBlur={() => setShowDatePicker(false)}
-                            onKeyDown={(e) => { if (e.key === 'Escape') setShowDatePicker(false); }}
-                            className="px-2.5 py-1.5 bg-[var(--bg-page)] border border-[var(--border-strong)] rounded-[6px] shadow-sm text-[11px] font-sans font-semibold outline-none min-w-[140px]"
-                          />
-                      }
-                   </div>
-                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    <div className="text-[12px] font-sans text-[var(--text-secondary)] time-display">{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(selectedDate)} · {formatTime(isFuture ? new Date(selectedDate.setHours(12,0,0,0)) : now, "UTC", timeFormat)} UTC</div>
+                  <div className="relative">
+                    {!showDatePicker
+                      ? <button onClick={() => setShowDatePicker(true)} className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--bg-page)] border border-[var(--border-default)] rounded-[6px] shadow-sm text-[11px] font-sans font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all">📅 {isFuture ? selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : "Today"}</button>
+                      : <input
+                        type="date"
+                        autoFocus
+                        value={selectedDate.toISOString().split('T')[0]}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            const [year, month, day] = e.target.value.split('-').map(Number);
+                            const d = new Date(year, month - 1, day);
+                            if (!isNaN(d.getTime())) setSelectedDate(d);
+                          } else {
+                            // Fallback to today if cleared to prevent crash
+                            setSelectedDate(new Date());
+                          }
+                        }}
+                        onBlur={() => setShowDatePicker(false)}
+                        onKeyDown={(e) => { if (e.key === 'Escape') setShowDatePicker(false); }}
+                        className="px-2.5 py-1.5 bg-[var(--bg-page)] border border-[var(--border-strong)] rounded-[6px] shadow-sm text-[11px] font-sans font-semibold outline-none min-w-[140px]"
+                      />
+                    }
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                    <div className="text-[12px] font-sans text-[var(--text-secondary)] time-display">{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(selectedDate)} · {formatTime(isFuture ? new Date(selectedDate.setHours(12, 0, 0, 0)) : now, "UTC", timeFormat)} UTC</div>
                     {meetingPercent !== null && <button onClick={() => setMeetingPercent(null)} style={{ fontSize: 11, color: '#898989', background: 'none', border: 'none', cursor: 'pointer', transition: 'color 150ms ease' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={e => (e.currentTarget.style.color = '#898989')}>↺ Now</button>}
                   </div>
                 </div>

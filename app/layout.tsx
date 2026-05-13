@@ -9,8 +9,7 @@ const inter = Inter({
 });
 
 import { ThemeProvider } from "../components/ThemeProvider";
-import Starfield from "../components/Starfield";
-import SolarSystem from "../components/SolarSystem";
+import SolarGradientEngine from "../components/SolarGradientEngine";
 import { ToastProvider } from "../components/ToastProvider";
 
 export const metadata: Metadata = {
@@ -39,9 +38,8 @@ export default function RootLayout({
         `}} />
       </head>
       <body className="antialiased">
-        {/* Background layers at z-index 0, fixed, behind all content */}
-        <Starfield />
-        <SolarSystem />
+        {/* Background layer */}
+        <SolarGradientEngine />
         <ThemeProvider>
           <ToastProvider>
             {/* Content wrapper transparent so backgrounds show through */}
